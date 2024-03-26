@@ -7,11 +7,12 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+from typing import Dict
 
 SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
 
 
-def update_schema_names(schema_path: pathlib.Path, updated_schema_path: pathlib.Path, names_to_update: dict[str, str]):
+def update_schema_names(schema_path: pathlib.Path, updated_schema_path: pathlib.Path, names_to_update: Dict[str, str]):
     """Replace the occurrence of every key in names_to_update with the corresponding value
 
     This function parses the schema file at schema_path line by line and replaces the occurrence of
