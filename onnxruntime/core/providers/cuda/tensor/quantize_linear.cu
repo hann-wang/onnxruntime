@@ -161,6 +161,7 @@ struct RoundStd<half, int8_t> {
   }
 };
 
+#ifndef __HIP_PLATFORM_AMD__
 template <>
 struct RoundStd<BFloat16, int8_t> {
   __device__ __forceinline__ int8_t operator()(BFloat16 v, BFloat16 scale, int8_t zero_point) const {
@@ -168,7 +169,7 @@ struct RoundStd<BFloat16, int8_t> {
     return static_cast<int8_t>(max(std::numeric_limits<int8_t>::min(), min(std::numeric_limits<int8_t>::max(), value)));
   }
 };
-
+#endif
 template <>
 struct RoundStdInt4<half, int8_t> {
   __device__ __forceinline__ int8_t operator()(half v0,
@@ -189,6 +190,7 @@ struct RoundStdInt4<half, int8_t> {
   }
 };
 
+#ifndef __HIP_PLATFORM_AMD__
 template <>
 struct RoundStdInt4<BFloat16, int8_t> {
   __device__ __forceinline__ int8_t operator()(BFloat16 v0,
@@ -208,6 +210,7 @@ struct RoundStdInt4<BFloat16, int8_t> {
     return static_cast<int8_t>((value0_clip & 0x0f) | ((value1_clip & 0x0f) << 4));
   }
 };
+#endif
 
 template <>
 struct RoundStd<half, uint8_t> {
@@ -217,6 +220,7 @@ struct RoundStd<half, uint8_t> {
   }
 };
 
+#ifndef __HIP_PLATFORM_AMD__
 template <>
 struct RoundStd<BFloat16, uint8_t> {
   __device__ __forceinline__ int8_t operator()(BFloat16 v, BFloat16 scale, uint8_t zero_point) const {
@@ -224,6 +228,7 @@ struct RoundStd<BFloat16, uint8_t> {
     return static_cast<uint8_t>(max(std::numeric_limits<uint8_t>::min(), min(std::numeric_limits<uint8_t>::max(), value)));
   }
 };
+#endif
 
 template <>
 struct RoundStdInt4<half, uint8_t> {
@@ -245,6 +250,7 @@ struct RoundStdInt4<half, uint8_t> {
   }
 };
 
+#ifndef __HIP_PLATFORM_AMD__
 template <>
 struct RoundStdInt4<BFloat16, uint8_t> {
   __device__ __forceinline__ uint8_t operator()(BFloat16 v0,
@@ -264,6 +270,7 @@ struct RoundStdInt4<BFloat16, uint8_t> {
     return static_cast<uint8_t>((value0_clip & 0x0f) | ((value1_clip & 0x0f) << 4));
   }
 };
+#endif
 
 template <int NumThreadsPerBlock, int NumElementsPerThread, typename OutT, typename InT>
 __global__ void QuantizeLinearKernelStd(const InT* input, OutT* output, const InT* scale_ptr, const OutT* zero_point_ptr, CUDA_LONG N, RoundStd<InT, OutT> round) {
@@ -980,34 +987,44 @@ template Status CudaQuantizeLinearStd<int8_t, float>(cudaStream_t stream, const 
 template Status CudaQuantizeLinearStd<uint8_t, float>(cudaStream_t stream, const float* input, uint8_t* output, const float* scale, const uint8_t* zero_point, size_t num_of_element);
 template Status CudaQuantizeLinearStd<int8_t, half>(cudaStream_t stream, const half* input, int8_t* output, const half* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaQuantizeLinearStd<uint8_t, half>(cudaStream_t stream, const half* input, uint8_t* output, const half* scale, const uint8_t* zero_point, size_t num_of_element);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaQuantizeLinearStd<int8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, int8_t* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaQuantizeLinearStd<uint8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, uint8_t* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element);
+#endif
 template Status CudaQuantizeLinearStdInt4<int8_t, float>(cudaStream_t stream, const float* input, int8_t* output, const float* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaQuantizeLinearStdInt4<uint8_t, float>(cudaStream_t stream, const float* input, uint8_t* output, const float* scale, const uint8_t* zero_point, size_t num_of_element);
 template Status CudaQuantizeLinearStdInt4<int8_t, half>(cudaStream_t stream, const half* input, int8_t* output, const half* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaQuantizeLinearStdInt4<uint8_t, half>(cudaStream_t stream, const half* input, uint8_t* output, const half* scale, const uint8_t* zero_point, size_t num_of_element);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaQuantizeLinearStdInt4<int8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, int8_t* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaQuantizeLinearStdInt4<uint8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, uint8_t* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element);
+#endif
 
 template Status CudaQuantizeLinearAxisStd<int8_t, float>(cudaStream_t stream, const float* input, int8_t* output, const float* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaQuantizeLinearAxisStd<uint8_t, float>(cudaStream_t stream, const float* input, uint8_t* output, const float* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaQuantizeLinearAxisStd<int8_t, half>(cudaStream_t stream, const half* input, int8_t* output, const half* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaQuantizeLinearAxisStd<uint8_t, half>(cudaStream_t stream, const half* input, uint8_t* output, const half* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaQuantizeLinearAxisStd<int8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, int8_t* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaQuantizeLinearAxisStd<uint8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, uint8_t* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#endif
 template Status CudaQuantizeLinearAxisStdInt4<int8_t, float>(cudaStream_t stream, const float* input, int8_t* output, const float* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaQuantizeLinearAxisStdInt4<uint8_t, float>(cudaStream_t stream, const float* input, uint8_t* output, const float* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaQuantizeLinearAxisStdInt4<int8_t, half>(cudaStream_t stream, const half* input, int8_t* output, const half* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaQuantizeLinearAxisStdInt4<uint8_t, half>(cudaStream_t stream, const half* input, uint8_t* output, const half* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaQuantizeLinearAxisStdInt4<int8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, int8_t* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaQuantizeLinearAxisStdInt4<uint8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, uint8_t* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#endif
 
 template Status CudaQuantizeLinearBlockStdInt4<int8_t, float>(cudaStream_t stream, const float* input, int8_t* output, const float* scale, const int8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
 template Status CudaQuantizeLinearBlockStdInt4<uint8_t, float>(cudaStream_t stream, const float* input, uint8_t* output, const float* scale, const uint8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
 template Status CudaQuantizeLinearBlockStdInt4<int8_t, half>(cudaStream_t stream, const half* input, int8_t* output, const half* scale, const int8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
 template Status CudaQuantizeLinearBlockStdInt4<uint8_t, half>(cudaStream_t stream, const half* input, uint8_t* output, const half* scale, const uint8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaQuantizeLinearBlockStdInt4<int8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, int8_t* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
 template Status CudaQuantizeLinearBlockStdInt4<uint8_t, BFloat16>(cudaStream_t stream, const BFloat16* input, uint8_t* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
+#endif
 
 #if !defined(DISABLE_FLOAT8_TYPES)
 
@@ -1015,15 +1032,19 @@ template Status CudaQuantizeLinearSat<Float8E4M3FN, float>(cudaStream_t stream, 
 template Status CudaQuantizeLinearSat<Float8E5M2, float>(cudaStream_t stream, const float* input, Float8E5M2* output, const float* scale, const Float8E5M2* zero_point, size_t num_of_element, bool saturate);
 template Status CudaQuantizeLinearSat<Float8E4M3FN, half>(cudaStream_t stream, const half* input, Float8E4M3FN* output, const half* scale, const Float8E4M3FN* zero_point, size_t num_of_element, bool saturate);
 template Status CudaQuantizeLinearSat<Float8E5M2, half>(cudaStream_t stream, const half* input, Float8E5M2* output, const half* scale, const Float8E5M2* zero_point, size_t num_of_element, bool saturate);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaQuantizeLinearSat<Float8E4M3FN, BFloat16>(cudaStream_t stream, const BFloat16* input, Float8E4M3FN* output, const BFloat16* scale, const Float8E4M3FN* zero_point, size_t num_of_element, bool saturate);
 template Status CudaQuantizeLinearSat<Float8E5M2, BFloat16>(cudaStream_t stream, const BFloat16* input, Float8E5M2* output, const BFloat16* scale, const Float8E5M2* zero_point, size_t num_of_element, bool saturate);
+#endif
 
 template Status CudaQuantizeLinearAxisSat<Float8E4M3FN, float>(cudaStream_t stream, const float* input, Float8E4M3FN* output, const float* scale, const Float8E4M3FN* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales, bool saturate);
 template Status CudaQuantizeLinearAxisSat<Float8E5M2, float>(cudaStream_t stream, const float* input, Float8E5M2* output, const float* scale, const Float8E5M2* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales, bool saturate);
 template Status CudaQuantizeLinearAxisSat<Float8E4M3FN, half>(cudaStream_t stream, const half* input, Float8E4M3FN* output, const half* scale, const Float8E4M3FN* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales, bool saturate);
 template Status CudaQuantizeLinearAxisSat<Float8E5M2, half>(cudaStream_t stream, const half* input, Float8E5M2* output, const half* scale, const Float8E5M2* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales, bool saturate);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaQuantizeLinearAxisSat<Float8E4M3FN, BFloat16>(cudaStream_t stream, const BFloat16* input, Float8E4M3FN* output, const BFloat16* scale, const Float8E4M3FN* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales, bool saturate);
 template Status CudaQuantizeLinearAxisSat<Float8E5M2, BFloat16>(cudaStream_t stream, const BFloat16* input, Float8E5M2* output, const BFloat16* scale, const Float8E5M2* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales, bool saturate);
+#endif
 
 #endif
 
@@ -1031,34 +1052,44 @@ template Status CudaDequantizeLinearStd<int8_t, float>(cudaStream_t stream, cons
 template Status CudaDequantizeLinearStd<uint8_t, float>(cudaStream_t stream, const uint8_t* input, float* output, const float* scale, const uint8_t* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearStd<int8_t, half>(cudaStream_t stream, const int8_t* input, half* output, const half* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearStd<uint8_t, half>(cudaStream_t stream, const uint8_t* input, half* output, const half* scale, const uint8_t* zero_point, size_t num_of_element);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaDequantizeLinearStd<int8_t, BFloat16>(cudaStream_t stream, const int8_t* input, BFloat16* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearStd<uint8_t, BFloat16>(cudaStream_t stream, const uint8_t* input, BFloat16* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element);
+#endif
 template Status CudaDequantizeLinearStdInt4<int8_t, float>(cudaStream_t stream, const int8_t* input, float* output, const float* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearStdInt4<uint8_t, float>(cudaStream_t stream, const uint8_t* input, float* output, const float* scale, const uint8_t* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearStdInt4<int8_t, half>(cudaStream_t stream, const int8_t* input, half* output, const half* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearStdInt4<uint8_t, half>(cudaStream_t stream, const uint8_t* input, half* output, const half* scale, const uint8_t* zero_point, size_t num_of_element);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaDequantizeLinearStdInt4<int8_t, BFloat16>(cudaStream_t stream, const int8_t* input, BFloat16* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearStdInt4<uint8_t, BFloat16>(cudaStream_t stream, const uint8_t* input, BFloat16* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element);
+#endif
 
 template Status CudaDequantizeLinearAxisStd<int8_t, float>(cudaStream_t stream, const int8_t* input, float* output, const float* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisStd<uint8_t, float>(cudaStream_t stream, const uint8_t* input, float* output, const float* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisStd<int8_t, half>(cudaStream_t stream, const int8_t* input, half* output, const half* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisStd<uint8_t, half>(cudaStream_t stream, const uint8_t* input, half* output, const half* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaDequantizeLinearAxisStd<int8_t, BFloat16>(cudaStream_t stream, const int8_t* input, BFloat16* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisStd<uint8_t, BFloat16>(cudaStream_t stream, const uint8_t* input, BFloat16* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#endif
 template Status CudaDequantizeLinearAxisStdInt4<int8_t, float>(cudaStream_t stream, const int8_t* input, float* output, const float* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisStdInt4<uint8_t, float>(cudaStream_t stream, const uint8_t* input, float* output, const float* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisStdInt4<int8_t, half>(cudaStream_t stream, const int8_t* input, half* output, const half* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisStdInt4<uint8_t, half>(cudaStream_t stream, const uint8_t* input, half* output, const half* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaDequantizeLinearAxisStdInt4<int8_t, BFloat16>(cudaStream_t stream, const int8_t* input, BFloat16* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisStdInt4<uint8_t, BFloat16>(cudaStream_t stream, const uint8_t* input, BFloat16* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#endif
 
 template Status CudaDequantizeLinearBlockStdInt4<int8_t, float>(cudaStream_t stream, const int8_t* input, float* output, const float* scale, const int8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
 template Status CudaDequantizeLinearBlockStdInt4<uint8_t, float>(cudaStream_t stream, const uint8_t* input, float* output, const float* scale, const uint8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
 template Status CudaDequantizeLinearBlockStdInt4<int8_t, half>(cudaStream_t stream, const int8_t* input, half* output, const half* scale, const int8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
 template Status CudaDequantizeLinearBlockStdInt4<uint8_t, half>(cudaStream_t stream, const uint8_t* input, half* output, const half* scale, const uint8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaDequantizeLinearBlockStdInt4<int8_t, BFloat16>(cudaStream_t stream, const int8_t* input, BFloat16* output, const BFloat16* scale, const int8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
 template Status CudaDequantizeLinearBlockStdInt4<uint8_t, BFloat16>(cudaStream_t stream, const uint8_t* input, BFloat16* output, const BFloat16* scale, const uint8_t* zero_point, size_t num_of_element, size_t K, size_t N, size_t block_size);
+#endif
 
 #if !defined(DISABLE_FLOAT8_TYPES)
 
@@ -1066,15 +1097,19 @@ template Status CudaDequantizeLinearSat<Float8E4M3FN, float>(cudaStream_t stream
 template Status CudaDequantizeLinearSat<Float8E5M2, float>(cudaStream_t stream, const Float8E5M2* input, float* output, const float* scale, const Float8E5M2* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearSat<Float8E4M3FN, half>(cudaStream_t stream, const Float8E4M3FN* input, half* output, const half* scale, const Float8E4M3FN* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearSat<Float8E5M2, half>(cudaStream_t stream, const Float8E5M2* input, half* output, const half* scale, const Float8E5M2* zero_point, size_t num_of_element);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaDequantizeLinearSat<Float8E4M3FN, BFloat16>(cudaStream_t stream, const Float8E4M3FN* input, BFloat16* output, const BFloat16* scale, const Float8E4M3FN* zero_point, size_t num_of_element);
 template Status CudaDequantizeLinearSat<Float8E5M2, BFloat16>(cudaStream_t stream, const Float8E5M2* input, BFloat16* output, const BFloat16* scale, const Float8E5M2* zero_point, size_t num_of_element);
+#endif
 
 template Status CudaDequantizeLinearAxisSat<Float8E4M3FN, float>(cudaStream_t stream, const Float8E4M3FN* input, float* output, const float* scale, const Float8E4M3FN* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisSat<Float8E5M2, float>(cudaStream_t stream, const Float8E5M2* input, float* output, const float* scale, const Float8E5M2* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisSat<Float8E4M3FN, half>(cudaStream_t stream, const Float8E4M3FN* input, half* output, const half* scale, const Float8E4M3FN* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisSat<Float8E5M2, half>(cudaStream_t stream, const Float8E5M2* input, half* output, const half* scale, const Float8E5M2* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#ifndef __HIP_PLATFORM_AMD__
 template Status CudaDequantizeLinearAxisSat<Float8E4M3FN, BFloat16>(cudaStream_t stream, const Float8E4M3FN* input, BFloat16* output, const BFloat16* scale, const Float8E4M3FN* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
 template Status CudaDequantizeLinearAxisSat<Float8E5M2, BFloat16>(cudaStream_t stream, const Float8E5M2* input, BFloat16* output, const BFloat16* scale, const Float8E5M2* zero_point, size_t num_of_element, size_t batch_size, size_t n_scales);
+#endif
 
 #endif
 
