@@ -485,6 +485,10 @@ struct ConfigOptions final {
     return g_host->ConfigOptions__GetConfigEntry(this, config_key);
   }
 
+  std::string GetConfigOrDefault(const std::string& config_key, const std::string& default_value) const {
+    return g_host->ConfigOptions__GetConfigOrDefault(this, config_key, default_value);
+  }
+
   PROVIDER_DISALLOW_ALL(ConfigOptions)
 };
 
@@ -1013,6 +1017,7 @@ struct Graph final {
   Node* GetNode(NodeIndex node_index) noexcept { return g_host->Graph__GetNode(this, node_index); }
   const NodeArg* GetNodeArg(const std::string& name) const { return g_host->Graph__GetNodeArg(this, name); }
   IOnnxRuntimeOpSchemaCollectionPtr GetSchemaRegistry() const { return g_host->Graph__GetSchemaRegistry(this); }
+  bool SetOpSchemaFromRegistryForNode(Node& node) { return g_host->Graph__SetOpSchemaFromRegistryForNode(this, node); }
 
   PROVIDER_DISALLOW_ALL(Graph)
 };
@@ -1454,4 +1459,11 @@ struct OrtRunOptions final {
     return onnxruntime::g_host->RunOptions__GetConfigOptions(this);
   }
   PROVIDER_DISALLOW_ALL(OrtRunOptions)
+};
+
+struct OrtSessionOptions final {
+  const std::unordered_map<std::string, std::string>& GetConfigOptions() const {
+    return onnxruntime::g_host->SessionOptions__GetConfigOptionsMap(this);
+  }
+  PROVIDER_DISALLOW_ALL(OrtSessionOptions)
 };

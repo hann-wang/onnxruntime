@@ -578,10 +578,13 @@ struct ProviderHost {
 
   // ConfigOptions
   virtual std::optional<std::string> ConfigOptions__GetConfigEntry(const ConfigOptions* p, const std::string& config_key) = 0;
+  virtual std::string ConfigOptions__GetConfigOrDefault(const ConfigOptions* p, const std::string& config_key,
+                                                        const std::string& default_value) = 0;
 
   // OrtRunOptions
   virtual const ConfigOptions& RunOptions__GetConfigOptions(const RunOptions* p) = 0;
-
+  // OrtSessionOptions
+  virtual const std::unordered_map<std::string, std::string>& SessionOptions__GetConfigOptionsMap(const OrtSessionOptions* p) = 0;
   // ComputeCapability
   virtual std::unique_ptr<ComputeCapability> ComputeCapability__construct(std::unique_ptr<IndexedSubGraph> t_sub_graph) = 0;
   virtual void ComputeCapability__operator_delete(ComputeCapability* p) = 0;
@@ -953,6 +956,7 @@ struct ProviderHost {
   virtual const Node* Graph__GetNode(const Graph* p, NodeIndex node_index) const = 0;
   virtual const NodeArg* Graph__GetNodeArg(const Graph* p, const std::string& name) const = 0;
   virtual IOnnxRuntimeOpSchemaCollectionPtr Graph__GetSchemaRegistry(const Graph* p) const = 0;
+  virtual bool Graph__SetOpSchemaFromRegistryForNode(Graph* p, Node& node) = 0;
 
   // GraphViewer
   virtual void GraphViewer__operator_delete(GraphViewer* p) = 0;
