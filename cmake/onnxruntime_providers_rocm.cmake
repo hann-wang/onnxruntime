@@ -6,58 +6,6 @@
 
   list(APPEND CMAKE_PREFIX_PATH ${onnxruntime_ROCM_HOME})
 
-    # Get all propreties that cmake supports
-  if(NOT CMAKE_PROPERTY_LIST)
-      execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
-
-      # Convert command output into a CMake list
-      string(REGEX REPLACE ";" "\\\\;" CMAKE_PROPERTY_LIST "${CMAKE_PROPERTY_LIST}")
-      string(REGEX REPLACE "\n" ";" CMAKE_PROPERTY_LIST "${CMAKE_PROPERTY_LIST}")
-      list(REMOVE_DUPLICATES CMAKE_PROPERTY_LIST)
-  endif()
-
-  function(print_properties)
-      message("CMAKE_PROPERTY_LIST = ${CMAKE_PROPERTY_LIST}")
-  endfunction()
-
-  function(print_target_properties target)
-      if(NOT TARGET ${target})
-        message(STATUS "There is no target named '${target}'")
-        return()
-      endif()
-
-      foreach(property ${CMAKE_PROPERTY_LIST})
-          string(REPLACE "<CONFIG>" "${CMAKE_BUILD_TYPE}" property ${property})
-
-          # Fix https://stackoverflow.com/questions/32197663/how-can-i-remove-the-the-location-property-may-not-be-read-from-target-error-i
-          if(property STREQUAL "LOCATION" OR property MATCHES "^LOCATION_" OR property MATCHES "_LOCATION$")
-              continue()
-          endif()
-
-          get_property(was_set TARGET ${target} PROPERTY ${property} SET)
-          if(was_set)
-              get_target_property(value ${target} ${property})
-              message("${target} ${property} = ${value}")
-          endif()
-      endforeach()
-  endfunction()
-
-  function(remove_hip_device_from_target target)
-      # Get the current INTERFACE_LINK_LIBRARIES for the specified target
-      get_target_property(current_libs ${target} INTERFACE_LINK_LIBRARIES)
-
-      # Check if hip::device is in the list of libraries
-      if(current_libs)
-          # Create a list of libraries, removing hip::device if it exists
-          string(REPLACE "hip::device" "" modified_libs "${current_libs}")
-          # Remove any extra spaces
-          string(STRIP "${modified_libs}" modified_libs)
-
-          # Set the modified INTERFACE_LINK_LIBRARIES back to the target
-          set_target_properties(${target} PROPERTIES INTERFACE_LINK_LIBRARIES "${modified_libs}")
-      endif()
-  endfunction()
-
   find_package(HIP)
   find_package(hiprand REQUIRED)
   find_package(hipblas REQUIRED)
@@ -245,24 +193,13 @@
   endif()
 
   if (onnxruntime_USE_COMPOSABLE_KERNEL)
-    set_property(TARGET onnxruntime_providers_rocm PROPERTY HIP_ARCHITECTURES gfx942 gfx90a)
-
-    find_package(composable_kernel COMPONENTS device_contraction_operations device_other_operations device_gemm_operations device_conv_operations  device_reduction_operations)
-    remove_hip_device_from_target(composable_kernel::device_contraction_operations)
-    remove_hip_device_from_target(composable_kernel::device_other_operations)
-    remove_hip_device_from_target(composable_kernel::device_reduction_operations)
-    remove_hip_device_from_target(composable_kernel::device_conv_operations)
-    remove_hip_device_from_target(composable_kernel::device_gemm_operations)
-    target_link_libraries(onnxruntime_providers_rocm PRIVATE composable_kernel::device_other_operations
-      composable_kernel::device_contraction_operations
-      composable_kernel::device_reduction_operations
-      composable_kernel::device_conv_operations
-      composable_kernel::device_gemm_operations)
+    include(external/composable_kernel.cmake)
+    target_link_libraries(onnxruntime_providers_rocm PRIVATE onnxruntime_composable_kernel_includes)
     target_compile_definitions(onnxruntime_providers_rocm PRIVATE USE_COMPOSABLE_KERNEL)
-    # if (onnxruntime_USE_COMPOSABLE_KERNEL_CK_TILE)
-    #   target_link_libraries(onnxruntime_providers_rocm PUBLIC onnxruntime_composable_kernel_fmha)
-    #   target_compile_definitions(onnxruntime_providers_rocm PRIVATE USE_COMPOSABLE_KERNEL_CK_TILE)
-    # endif()
+    if (onnxruntime_USE_COMPOSABLE_KERNEL_CK_TILE)
+      target_link_libraries(onnxruntime_providers_rocm PUBLIC onnxruntime_composable_kernel_fmha)
+      target_compile_definitions(onnxruntime_providers_rocm PRIVATE USE_COMPOSABLE_KERNEL_CK_TILE)
+    endif()
   endif()
 
   if(UNIX)
