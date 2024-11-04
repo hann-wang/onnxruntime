@@ -67,7 +67,9 @@ ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPES(
     uint64_t,
     int8_t,
     uint8_t,
-    bool);
+    bool,
+    MLFloat16,
+    BFloat16);
 
 ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPES(
     kCpuExecutionProvider, kOnnxDomain, Pad, 18, Input, 0,
@@ -79,7 +81,9 @@ ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPES(
     uint64_t,
     int8_t,
     uint8_t,
-    bool);
+    bool,
+    MLFloat16,
+    BFloat16);
 
 ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPES(
     kCpuExecutionProvider, kOnnxDomain, Pad, 19, Input, 0,
@@ -91,7 +95,9 @@ ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPES(
     uint64_t,
     int8_t,
     uint8_t,
-    bool);
+    bool,
+    MLFloat16,
+    BFloat16);
 
 // Opset 21 added int4 and uint4.
 // TODO(adrianlizarraga): Implement int4 and uint4 support.
@@ -105,7 +111,9 @@ ORT_SPECIFY_OP_KERNEL_ARG_DEFAULT_TYPES(
     uint64_t,
     int8_t,
     uint8_t,
-    bool);
+    bool,
+    MLFloat16,
+    BFloat16);
 
 ORT_SPECIFY_OP_KERNEL_ARG_REQUIRED_TYPES(
     kCpuExecutionProvider, kOnnxDomain, Pad, 11, Input, 0, int32_t, int64_t);
@@ -641,6 +649,7 @@ static Status PadImpl(OpKernelContext* ctx,
 union PadValue {
   uint64_t u64;
   uint32_t u32;
+  uint16_t u16;
   uint8_t u8;
   double f64;
   float f32;
@@ -703,6 +712,9 @@ Status Pad::Compute(OpKernelContext* ctx) const {
         case sizeof(uint8_t):
           value.u8 = reinterpret_cast<const uint8_t*>(value_data)[0];
           break;
+        case sizeof(uint16_t):
+          value.u16 = reinterpret_cast<const uint16_t*>(value_data)[0];
+          break;
         default:
           ORT_THROW("Unsupported input data type of ", data_type);
       }
@@ -729,6 +741,9 @@ Status Pad::Compute(OpKernelContext* ctx) const {
       break;
     case sizeof(uint8_t):
       pad_status = PadImpl<uint8_t>(ctx, *pads_to_use, *slices_to_use, mode_, value.u8);
+      break;
+    case sizeof(uint16_t):
+      pad_status = PadImpl<uint16_t>(ctx, *pads_to_use, *slices_to_use, mode_, value.u16);
       break;
     default:
       pad_status = ORT_MAKE_STATUS(ONNXRUNTIME, FAIL, "Unsupported input data type of ", data_type);
