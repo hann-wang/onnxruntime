@@ -231,5 +231,6 @@ SPECIALIZED_IMPL(float)
 SPECIALIZED_IMPL(double)
 SPECIALIZED_IMPL(half)
 SPECIALIZED_IMPL(bool)
+SPECIALIZED_IMPL(BFloat16)
 }  // namespace cuda
 }  // namespace onnxruntime

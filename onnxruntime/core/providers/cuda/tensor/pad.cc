@@ -228,6 +228,7 @@ SPECIALIZED_COMPUTE(float)
 SPECIALIZED_COMPUTE(double)
 SPECIALIZED_COMPUTE(MLFloat16)
 SPECIALIZED_COMPUTE(bool)
+SPECIALIZED_COMPUTE(BFloat16)
 
 }  // namespace cuda
 };  // namespace onnxruntime
