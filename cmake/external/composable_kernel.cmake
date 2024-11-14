@@ -1,3 +1,5 @@
+set(PATCH_FIX_HIP_CHECK_ERROR ${PROJECT_SOURCE_DIR}/patches/composable_kernel/fix_hip_check_error.patch)
+
 # Get all propreties that cmake supports
 if(NOT CMAKE_PROPERTY_LIST)
     execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
@@ -85,6 +87,7 @@ if (onnxruntime_USE_COMPOSABLE_KERNEL_CK_TILE)
   FetchContent_Declare(composable_kernel
     URL ${DEP_URL_composable_kernel}
     URL_HASH SHA1=${DEP_SHA1_composable_kernel}
+    PATCH_COMMAND ${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < ${PATCH_FIX_HIP_CHECK_ERROR}
   )
 
   FetchContent_GetProperties(composable_kernel)
