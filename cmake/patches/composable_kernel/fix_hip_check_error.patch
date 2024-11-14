@@ -68,3 +68,19 @@
 
      return 0;
  #endif
+
+--- a/include/ck_tile/host/hip_check_error.hpp    2024-10-01 05:00:50.000000000 +0800
++++ b/include/ck_tile/host/hip_check_error.hpp    2024-11-14 17:36:21.878209000 +0800
+@@ -22,6 +22,7 @@
+ }
+ } // namespace ck_tile
+
++#ifndef HIP_CHECK_ERROR
+ #define HIP_CHECK_ERROR(retval_or_funcall)                                         \
+     do                                                                             \
+     {                                                                              \
+@@ -34,3 +35,4 @@
+             throw std::runtime_error(ostr.str());                                  \
+         }                                                                          \
+     } while(0)
++#endif
