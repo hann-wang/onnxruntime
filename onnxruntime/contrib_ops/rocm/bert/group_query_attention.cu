@@ -39,7 +39,7 @@ namespace rocm {
 
 // REGISTER_KERNEL_TYPED(float)
 REGISTER_KERNEL_TYPED(MLFloat16)
-// REGISTER_KERNEL_TYPED(BFloat16)
+REGISTER_KERNEL_TYPED(BFloat16)
 
 template <typename T>
 std::string GetCkFmhaDataTypeString();
