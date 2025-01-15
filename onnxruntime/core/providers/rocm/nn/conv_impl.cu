@@ -44,5 +44,13 @@ template void ConvBiasImpl<half, half, half>(
     size_t bias_size,
     size_t count);
 
+template void ConvBiasImpl<BFloat16, BFloat16, BFloat16>(
+    hipStream_t stream,
+    const BFloat16* lhs_data,
+    const BFloat16* rhs_data,
+    BFloat16* output_data,
+    size_t bias_size,
+    size_t count);
+
 }  // namespace rocm
 }  // namespace onnxruntime

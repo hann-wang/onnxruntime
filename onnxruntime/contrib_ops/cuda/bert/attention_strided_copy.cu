@@ -180,6 +180,12 @@ template Status LaunchStridedCopy<half>(
     half* out, longlong4 out_strides,
     int max_threads_per_block);
 
+template Status LaunchStridedCopy<BFloat16>(
+    cudaStream_t stream,
+    const BFloat16* in, int4 in_shape, longlong4 in_strides,
+    BFloat16* out, longlong4 out_strides,
+    int max_threads_per_block);
+
 }  // namespace cuda
 }  // namespace contrib
 }  // namespace onnxruntime

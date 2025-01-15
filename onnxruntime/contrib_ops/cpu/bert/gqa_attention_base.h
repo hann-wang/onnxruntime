@@ -58,7 +58,8 @@ class GQAAttentionBase {
                         const Tensor* seqlens_k,                    // past sequence lengths tensor
                         GroupQueryAttentionParameters& parameters,  // attention parameters
                         AllocatorPtr allocator,                     // allocator for temporary tensors
-                        OpKernelContext* context) const {
+                        OpKernelContext* context,
+                        const bool is_causal = true) const {
     const bool is_prompt = parameters.is_first_prompt;
     const int batch_size = parameters.batch_size;
     const int sequence_length = parameters.sequence_length;
@@ -89,7 +90,7 @@ class GQAAttentionBase {
     const T* k = packed_qkv ? Q + num_heads_ * sequence_length * head_size : K;
     ComputeAttentionProbs<T>(static_cast<float*>(attention_probs), Q, k, seqlens_k->Data<int32_t>(), batch_size,
                              sequence_length, seqlen_past_kv_cache, seqlen_present_kv_cache, head_size, past_key_data,
-                             present_key_data, past_present_share_buffer, packed_qkv, is_prompt, tp, allocator);
+                             present_key_data, past_present_share_buffer, packed_qkv, is_prompt, tp, allocator, is_causal);
 
     // Compute the attentionScore * Value: out(B, N, S, H_v) = attention_probs(B, N, S, T) x V(B, N, T, H_v)
     const T* v = packed_qkv ? Q + (num_heads_ + kv_num_heads_) * sequence_length * head_size : V;
@@ -122,7 +123,8 @@ class GQAAttentionBase {
                              const bool packed_qkv,                        // whether Q, K, V are packed
                              const bool is_prompt,                         // whether it is prompt
                              ThreadPool* tp,                               // thread pool
-                             AllocatorPtr allocator) const {               // allocator for temporary buffer
+                             AllocatorPtr allocator,                       // allocator for temporary buffer
+                             const bool is_causal = true) const {
     const ptrdiff_t packed_batch_stride =
         packed_qkv ? SafeInt<ptrdiff_t>(num_heads_ + 2 * kv_num_heads_) * sequence_length * head_size
                    : SafeInt<ptrdiff_t>(0);
@@ -217,7 +219,7 @@ class GQAAttentionBase {
         // compute Softmax
         float* output_softmax = output;
         for (size_t seq = 0; seq < sequence_length; seq++) {
-          size_t seq_causal_length = past_seqlen + seq + 1;
+          size_t seq_causal_length = is_causal ? past_seqlen + seq + 1 : past_seqlen + sequence_length;
           if (local_window_size_ > 0 && seq_causal_length > static_cast<size_t>(local_window_size_) + 1) {
             for (size_t total_seq_id = 0; total_seq_id < seq_causal_length - local_window_size_ - 1; total_seq_id++) {
               output_softmax[total_seq_id] = 0.f;

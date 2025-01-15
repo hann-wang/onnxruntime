@@ -133,7 +133,7 @@ GroupQueryAttention<T>::GroupQueryAttention(const OpKernelInfo& info)
   num_heads_ = static_cast<int>(num_heads);
   kv_num_heads_ = static_cast<int>(kv_num_heads);
   is_past_bsnh_ = false;
-  is_unidirectional_ = true;
+  is_unidirectional_ = info.GetAttrOrDefault<int64_t>("unidirectional", 1) == 1;
   local_window_size_ = static_cast<int>(info.GetAttrOrDefault<int64_t>("local_window_size", -1));
   do_rotary_ = info.GetAttrOrDefault<int64_t>("do_rotary", 0) == 1;
   rotary_interleaved_ = info.GetAttrOrDefault<int64_t>("rotary_interleaved", 0) == 1;
@@ -497,7 +497,7 @@ Status GroupQueryAttention<T>::ComputeInternal(OpKernelContext* ctx) const {
       parameters.head_size,  // v head size
       GetCkFmhaDataTypeString<T>(),
       !parameters.is_first_prompt,  // true,  // is_group_mode
-      true,                   // is_v_rowmajor ? dim is fastest : seq is fastest
+      true,                         // is_v_rowmajor ? dim is fastest : seq is fastest
       mask.type,
       bias_type,
       false,  // has_lse

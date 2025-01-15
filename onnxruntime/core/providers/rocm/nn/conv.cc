@@ -417,6 +417,7 @@ Status MiopenConvolutionDescriptor::Set(
 // template instantiation for NhwcConv
 template class Conv<float, true>;
 template class Conv<MLFloat16, true>;
+template class Conv<BFloat16, true>;
 #endif
 
 }  // namespace rocm

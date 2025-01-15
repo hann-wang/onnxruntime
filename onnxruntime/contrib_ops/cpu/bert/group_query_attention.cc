@@ -39,7 +39,9 @@ REGISTER_KERNEL_TYPED(MLFloat16)
 
 template <typename T>
 GroupQueryAttention<T>::GroupQueryAttention(const OpKernelInfo& info)
-    : OpKernel(info), GQAAttentionBase(info, true) {}
+    : OpKernel(info), GQAAttentionBase(info, true) {
+  is_unidirectional_ = info.GetAttrOrDefault<int64_t>("unidirectional", 1) == 1;
+}
 
 template <typename T>
 Status GroupQueryAttention<T>::Compute(OpKernelContext* context) const {
@@ -195,7 +197,7 @@ Status GroupQueryAttention<T>::Compute(OpKernelContext* context) const {
   // Compute the attention score and apply the score to V
   return ApplyAttention(q_rotary, packed_qkv ? nullptr : k_rotary, packed_qkv ? nullptr : V.Get<Tensor>().Data<T>(),
                         past_key, past_value, output, present_k, present_v,
-                        seqlens_k, parameters, allocator, context);
+                        seqlens_k, parameters, allocator, context, is_unidirectional_);
 }
 }  // namespace contrib
 }  // namespace onnxruntime

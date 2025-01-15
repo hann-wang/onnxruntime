@@ -21,6 +21,7 @@ namespace rocm {
 
 REGISTER_KERNEL_TYPED(float)
 REGISTER_KERNEL_TYPED(MLFloat16)
+REGISTER_KERNEL_TYPED(BFloat16)
 
 }  // namespace rocm
 }  // namespace contrib
