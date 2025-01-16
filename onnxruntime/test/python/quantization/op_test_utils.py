@@ -1,3 +1,10 @@
+# -------------------------------------------------------------------------
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See License.txt in the project root for
+# license information.
+# --------------------------------------------------------------------------
+from __future__ import annotations
+
 import uuid
 from pathlib import Path
 
@@ -372,10 +379,10 @@ def check_op_type_count(testcase, model_path, **kwargs):
         if node.op_type in optype2count:
             optype2count[node.op_type] += 1
 
-    for op_type in kwargs:
+    for op_type, value in kwargs.items():
         try:
             testcase.assertEqual(
-                kwargs[op_type],
+                value,
                 optype2count[op_type],
                 f"op_type {op_type} count not same",
             )
@@ -661,3 +668,29 @@ def generate_random_initializer(initializer_name, tensor_shape, tensor_dtype, me
     tensor = np.random.normal(mean, dev, tensor_shape).astype(tensor_dtype)
     init = onnx.numpy_helper.from_array(tensor, initializer_name)
     return init
+
+
+def get_tensor_consumers_and_producers(
+    model: onnx.ModelProto,
+) -> tuple[dict[str, list[onnx.NodeProto]], dict[str, onnx.NodeProto]]:
+    """
+    Returns a tuple containing the following python dictionaries:
+      - consumers: maps a tensor name to the list of nodes that have that tensor as an input.
+      - producers: maps a tensor name to the node that generates this tensor as an output.
+    """
+    consumers: dict[str, list[onnx.NodeProto]] = {}
+    producers: dict[str, onnx.NodeProto] = {}
+    for node in model.graph.node:
+        # Iterate through node's inputs to build the consumers dictionary.
+        for input_name in node.input:
+            if input_name:
+                if input_name not in consumers:
+                    consumers[input_name] = []
+
+                consumers[input_name].append(node)
+
+        # Iterate through node's outputs to build the producers dictionary.
+        for output_name in node.output:
+            producers[output_name] = node
+
+    return (consumers, producers)

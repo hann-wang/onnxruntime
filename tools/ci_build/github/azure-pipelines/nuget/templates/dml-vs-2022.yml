@@ -56,9 +56,6 @@ stages:
       - checkout: self
         clean: true
         submodules: recursive
-      - task: mspremier.PostBuildCleanup.PostBuildCleanup-task.PostBuildCleanup@3
-        displayName: 'Clean Agent Directories'
-        condition: always()
 
       - powershell: |
           if($env:TELEMETRYGUID)
@@ -75,7 +72,7 @@ stages:
 
       - task: NodeTool@0
         inputs:
-          versionSpec: '18.x'
+          versionSpec: '20.x'
 
       - task: onebranch.pipeline.tsaoptions@1
         displayName: 'OneBranch TSAOptions'

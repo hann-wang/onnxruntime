@@ -9,6 +9,7 @@ import os
 import statistics
 import sys
 import time
+from pathlib import Path
 
 import __init__  # noqa: F401. Walk-around to run this script directly
 import coloredlogs
@@ -22,6 +23,11 @@ SD_MODELS = {
     "2.0": "stabilityai/stable-diffusion-2",
     "2.1": "stabilityai/stable-diffusion-2-1",
     "xl-1.0": "stabilityai/stable-diffusion-xl-refiner-1.0",
+    "3.0M": "stabilityai/stable-diffusion-3-medium-diffusers",
+    "3.5M": "stabilityai/stable-diffusion-3.5-medium",
+    "3.5L": "stabilityai/stable-diffusion-3.5-large",
+    "Flux.1S": "black-forest-labs/FLUX.1-schnell",
+    "Flux.1D": "black-forest-labs/FLUX.1-dev",
 }
 
 PROVIDERS = {
@@ -49,6 +55,10 @@ def example_prompts():
     negative_prompt = "bad composition, ugly, abnormal, malformed"
 
     return prompts, negative_prompt
+
+
+def warmup_prompts():
+    return "warm up", "bad"
 
 
 def measure_gpu_memory(monitor_type, func, start_memory=None):
@@ -86,6 +96,24 @@ def get_ort_pipeline(model_name: str, directory: str, provider, disable_safety_c
 
 
 def get_torch_pipeline(model_name: str, disable_safety_checker: bool, enable_torch_compile: bool, use_xformers: bool):
+    if "FLUX" in model_name:
+        from diffusers import FluxPipeline
+
+        pipe = FluxPipeline.from_pretrained(model_name, torch_dtype=torch.bfloat16).to("cuda")
+        if enable_torch_compile:
+            pipe.transformer.to(memory_format=torch.channels_last)
+            pipe.transformer = torch.compile(pipe.transformer, mode="max-autotune", fullgraph=True)
+        return pipe
+
+    if "stable-diffusion-3" in model_name:
+        from diffusers import StableDiffusion3Pipeline
+
+        pipe = StableDiffusion3Pipeline.from_pretrained(model_name, torch_dtype=torch.bfloat16).to("cuda")
+        if enable_torch_compile:
+            pipe.transformer.to(memory_format=torch.channels_last)
+            pipe.transformer = torch.compile(pipe.transformer, mode="max-autotune", fullgraph=True)
+        return pipe
+
     from diffusers import DDIMScheduler, StableDiffusionPipeline
     from torch import channels_last, float16
 
@@ -112,9 +140,9 @@ def get_torch_pipeline(model_name: str, disable_safety_checker: bool, enable_tor
     return pipe
 
 
-def get_image_filename_prefix(engine: str, model_name: str, batch_size: int, disable_safety_checker: bool):
+def get_image_filename_prefix(engine: str, model_name: str, batch_size: int, steps: int, disable_safety_checker: bool):
     short_model_name = model_name.split("/")[-1].replace("stable-diffusion-", "sd")
-    return f"{engine}_{short_model_name}_b{batch_size}" + ("" if disable_safety_checker else "_safe")
+    return f"{engine}_{short_model_name}_b{batch_size}_s{steps}" + ("" if disable_safety_checker else "_safe")
 
 
 def run_ort_pipeline(
@@ -136,7 +164,14 @@ def run_ort_pipeline(
     prompts, negative_prompt = example_prompts()
 
     def warmup():
-        pipe("warm up", height, width, num_inference_steps=steps, num_images_per_prompt=batch_size)
+        prompt, negative = warmup_prompts()
+        pipe(
+            prompt=[prompt] * batch_size,
+            height=height,
+            width=width,
+            num_inference_steps=steps,
+            negative_prompt=[negative] * batch_size,
+        )
 
     # Run warm up, and measure GPU memory of two runs
     # cuDNN/MIOpen The first run has  algo search so it might need more memory)
@@ -149,22 +184,20 @@ def run_ort_pipeline(
     for i, prompt in enumerate(prompts):
         if i >= num_prompts:
             break
-        for j in range(batch_count):
-            inference_start = time.time()
-            images = pipe(
-                [prompt] * batch_size,
-                height,
-                width,
-                num_inference_steps=steps,
-                negative_prompt=[negative_prompt] * batch_size,
-                guidance_scale=7.5,
-            ).images
-            inference_end = time.time()
-            latency = inference_end - inference_start
-            latency_list.append(latency)
-            print(f"Inference took {latency:.3f} seconds")
-            for k, image in enumerate(images):
-                image.save(f"{image_filename_prefix}_{i}_{j}_{k}.jpg")
+        inference_start = time.time()
+        images = pipe(
+            prompt=[prompt] * batch_size,
+            height=height,
+            width=width,
+            num_inference_steps=steps,
+            negative_prompt=[negative_prompt] * batch_size,
+        ).images
+        inference_end = time.time()
+        latency = inference_end - inference_start
+        latency_list.append(latency)
+        print(f"Inference took {latency:.3f} seconds")
+        for k, image in enumerate(images):
+            image.save(f"{image_filename_prefix}_{i}_{k}.jpg")
 
     from onnxruntime import __version__ as ort_version
 
@@ -184,6 +217,25 @@ def run_ort_pipeline(
     }
 
 
+def get_negative_prompt_kwargs(negative_prompt, use_num_images_per_prompt, is_flux, batch_size) -> dict:
+    # Flux does not support negative prompt
+    kwargs = (
+        (
+            {"negative_prompt": negative_prompt}
+            if use_num_images_per_prompt
+            else {"negative_prompt": [negative_prompt] * batch_size}
+        )
+        if not is_flux
+        else {}
+    )
+
+    # Fix the random seed so that we can inspect the output quality easily.
+    if torch.cuda.is_available():
+        kwargs["generator"] = torch.Generator(device="cuda").manual_seed(123)
+
+    return kwargs
+
+
 def run_torch_pipeline(
     pipe,
     batch_size: int,
@@ -198,9 +250,14 @@ def run_torch_pipeline(
 ):
     prompts, negative_prompt = example_prompts()
 
-    # total 2 runs of warm up, and measure GPU memory for CUDA EP
+    import diffusers
+
+    is_flux = isinstance(pipe, diffusers.FluxPipeline)
+
     def warmup():
-        pipe("warm up", height, width, num_inference_steps=steps, num_images_per_prompt=batch_size)
+        prompt, negative = warmup_prompts()
+        extra_kwargs = get_negative_prompt_kwargs(negative, False, is_flux, batch_size)
+        pipe(prompt=[prompt] * batch_size, height=height, width=width, num_inference_steps=steps, **extra_kwargs)
 
     # Run warm up, and measure GPU memory of two runs (The first run has cuDNN algo search so it might need more memory)
     first_run_memory = measure_gpu_memory(memory_monitor_type, warmup, start_memory)
@@ -215,25 +272,23 @@ def run_torch_pipeline(
         if i >= num_prompts:
             break
         torch.cuda.synchronize()
-        for j in range(batch_count):
-            inference_start = time.time()
-            images = pipe(
-                prompt=[prompt] * batch_size,
-                height=height,
-                width=width,
-                num_inference_steps=steps,
-                guidance_scale=7.5,
-                negative_prompt=[negative_prompt] * batch_size,
-                generator=None,  # torch.Generator
-            ).images
+        inference_start = time.time()
+        extra_kwargs = get_negative_prompt_kwargs(negative_prompt, False, is_flux, batch_size)
+        images = pipe(
+            prompt=[prompt] * batch_size,
+            height=height,
+            width=width,
+            num_inference_steps=steps,
+            **extra_kwargs,
+        ).images
 
-            torch.cuda.synchronize()
-            inference_end = time.time()
-            latency = inference_end - inference_start
-            latency_list.append(latency)
-            print(f"Inference took {latency:.3f} seconds")
-            for k, image in enumerate(images):
-                image.save(f"{image_filename_prefix}_{i}_{j}_{k}.jpg")
+        torch.cuda.synchronize()
+        inference_end = time.time()
+        latency = inference_end - inference_start
+        latency_list.append(latency)
+        print(f"Inference took {latency:.3f} seconds")
+        for k, image in enumerate(images):
+            image.save(f"{image_filename_prefix}_{i}_{k}.jpg")
 
     return {
         "engine": "torch",
@@ -275,7 +330,7 @@ def run_ort(
     load_end = time.time()
     print(f"Model loading took {load_end - load_start} seconds")
 
-    image_filename_prefix = get_image_filename_prefix("ort", model_name, batch_size, disable_safety_checker)
+    image_filename_prefix = get_image_filename_prefix("ort", model_name, batch_size, steps, disable_safety_checker)
     result = run_ort_pipeline(
         pipe,
         batch_size,
@@ -306,38 +361,18 @@ def get_optimum_ort_pipeline(
     directory: str,
     provider="CUDAExecutionProvider",
     disable_safety_checker: bool = True,
+    use_io_binding: bool = False,
 ):
-    from optimum.onnxruntime import ORTStableDiffusionPipeline, ORTStableDiffusionXLPipeline
+    from optimum.onnxruntime import ORTPipelineForText2Image
 
     if directory is not None and os.path.exists(directory):
-        if "xl" in model_name:
-            pipeline = ORTStableDiffusionXLPipeline.from_pretrained(
-                directory,
-                provider=provider,
-                session_options=None,
-                use_io_binding=False,  # Not supported by Optimum version 1.17.1 at the time of verification.
-            )
-        else:
-            pipeline = ORTStableDiffusionPipeline.from_pretrained(
-                directory,
-                provider=provider,
-                use_io_binding=False,  # Not supported by Optimum version 1.17.1 at the time of verification.
-            )
-    elif "xl" in model_name:
-        pipeline = ORTStableDiffusionXLPipeline.from_pretrained(
-            model_name,
-            export=True,
-            provider=provider,
-            session_options=None,
-            use_io_binding=False,  # Not supported by Optimum version 1.17.1 at the time of verification.
-        )
-        pipeline.save_pretrained(directory)
+        pipeline = ORTPipelineForText2Image.from_pretrained(directory, provider=provider, use_io_binding=use_io_binding)
     else:
-        pipeline = ORTStableDiffusionPipeline.from_pretrained(
+        pipeline = ORTPipelineForText2Image.from_pretrained(
             model_name,
             export=True,
             provider=provider,
-            use_io_binding=False,  # Not supported by Optimum version 1.17.1 at the time of verification.
+            use_io_binding=use_io_binding,
         )
         pipeline.save_pretrained(directory)
 
@@ -359,15 +394,29 @@ def run_optimum_ort_pipeline(
     batch_count,
     start_memory,
     memory_monitor_type,
+    use_num_images_per_prompt=False,
 ):
-    from optimum.onnxruntime import ORTStableDiffusionPipeline, ORTStableDiffusionXLPipeline
+    print("Pipeline type", type(pipe))
+    from optimum.onnxruntime.modeling_diffusion import ORTFluxPipeline
 
-    assert isinstance(pipe, (ORTStableDiffusionPipeline, ORTStableDiffusionXLPipeline))
+    is_flux = isinstance(pipe, ORTFluxPipeline)
 
-    prompts = example_prompts()
+    prompts, negative_prompt = example_prompts()
 
     def warmup():
-        pipe("warm up", height, width, num_inference_steps=steps, num_images_per_prompt=batch_size)
+        prompt, negative = warmup_prompts()
+        extra_kwargs = get_negative_prompt_kwargs(negative, use_num_images_per_prompt, is_flux, batch_size)
+        if use_num_images_per_prompt:
+            pipe(
+                prompt=prompt,
+                height=height,
+                width=width,
+                num_inference_steps=steps,
+                num_images_per_prompt=batch_count,
+                **extra_kwargs,
+            )
+        else:
+            pipe(prompt=[prompt] * batch_size, height=height, width=width, num_inference_steps=steps, **extra_kwargs)
 
     # Run warm up, and measure GPU memory of two runs.
     # The first run has algo search for cuDNN/MIOpen, so it might need more memory.
@@ -376,27 +425,32 @@ def run_optimum_ort_pipeline(
 
     warmup()
 
+    extra_kwargs = get_negative_prompt_kwargs(negative_prompt, use_num_images_per_prompt, is_flux, batch_size)
+
     latency_list = []
     for i, prompt in enumerate(prompts):
         if i >= num_prompts:
             break
-        for j in range(batch_count):
-            inference_start = time.time()
+        inference_start = time.time()
+        if use_num_images_per_prompt:
             images = pipe(
-                prompt,
-                height,
-                width,
+                prompt=prompt,
+                height=height,
+                width=width,
                 num_inference_steps=steps,
-                negative_prompt=None,
-                guidance_scale=0.0,  # 7.5
                 num_images_per_prompt=batch_size,
+                **extra_kwargs,
             ).images
-            inference_end = time.time()
-            latency = inference_end - inference_start
-            latency_list.append(latency)
-            print(f"Inference took {latency:.3f} seconds")
-            for k, image in enumerate(images):
-                image.save(f"{image_filename_prefix}_{i}_{j}_{k}.jpg")
+        else:
+            images = pipe(
+                prompt=[prompt] * batch_size, height=height, width=width, num_inference_steps=steps, **extra_kwargs
+            ).images
+        inference_end = time.time()
+        latency = inference_end - inference_start
+        latency_list.append(latency)
+        print(f"Inference took {latency:.3f} seconds")
+        for k, image in enumerate(images):
+            image.save(f"{image_filename_prefix}_{i}_{k}.jpg")
 
     from onnxruntime import __version__ as ort_version
 
@@ -429,13 +483,19 @@ def run_optimum_ort(
     batch_count: int,
     start_memory,
     memory_monitor_type,
+    use_io_binding: bool = False,
 ):
     load_start = time.time()
-    pipe = get_optimum_ort_pipeline(model_name, directory, provider, disable_safety_checker)
+    pipe = get_optimum_ort_pipeline(
+        model_name, directory, provider, disable_safety_checker, use_io_binding=use_io_binding
+    )
     load_end = time.time()
     print(f"Model loading took {load_end - load_start} seconds")
 
-    image_filename_prefix = get_image_filename_prefix("optimum", model_name, batch_size, disable_safety_checker)
+    full_model_name = model_name + "_" + Path(directory).name if directory else model_name
+    image_filename_prefix = get_image_filename_prefix(
+        "optimum", full_model_name, batch_size, steps, disable_safety_checker
+    )
     result = run_optimum_ort_pipeline(
         pipe,
         batch_size,
@@ -530,9 +590,8 @@ def run_ort_trt_static(
     pipeline.load_resources(height, width, batch_size)
 
     def warmup():
-        pipeline.run(
-            ["warm up"] * batch_size, ["negative"] * batch_size, height, width, denoising_steps=steps, warmup=True
-        )
+        prompt, negative = warmup_prompts()
+        pipeline.run([prompt] * batch_size, [negative] * batch_size, height, width, denoising_steps=steps)
 
     # Run warm up, and measure GPU memory of two runs
     # The first run has algo search so it might need more memory
@@ -541,31 +600,30 @@ def run_ort_trt_static(
 
     warmup()
 
-    image_filename_prefix = get_image_filename_prefix("ort_trt", short_name, batch_size, disable_safety_checker)
+    image_filename_prefix = get_image_filename_prefix("ort_trt", short_name, batch_size, steps, disable_safety_checker)
 
     latency_list = []
     prompts, negative_prompt = example_prompts()
     for i, prompt in enumerate(prompts):
         if i >= num_prompts:
             break
-        for j in range(batch_count):
-            inference_start = time.time()
-            # Use warmup mode here since non-warmup mode will save image to disk.
-            images, pipeline_time = pipeline.run(
-                [prompt] * batch_size,
-                [negative_prompt] * batch_size,
-                height,
-                width,
-                denoising_steps=steps,
-                guidance=7.5,
-                seed=123,
-            )
-            inference_end = time.time()
-            latency = inference_end - inference_start
-            latency_list.append(latency)
-            print(f"End2End took {latency:.3f} seconds. Inference latency: {pipeline_time}")
-            for k, image in enumerate(images):
-                image.save(f"{image_filename_prefix}_{i}_{j}_{k}.jpg")
+        inference_start = time.time()
+        # Use warmup mode here since non-warmup mode will save image to disk.
+        images, pipeline_time = pipeline.run(
+            [prompt] * batch_size,
+            [negative_prompt] * batch_size,
+            height,
+            width,
+            denoising_steps=steps,
+            guidance=7.5,
+            seed=123,
+        )
+        inference_end = time.time()
+        latency = inference_end - inference_start
+        latency_list.append(latency)
+        print(f"End2End took {latency:.3f} seconds. Inference latency: {pipeline_time}")
+        for k, image in enumerate(images):
+            image.save(f"{image_filename_prefix}_{i}_{k}.jpg")
 
     pipeline.teardown()
 
@@ -671,9 +729,8 @@ def run_tensorrt_static(
     pipeline.load_resources(height, width, batch_size)
 
     def warmup():
-        pipeline.run(
-            ["warm up"] * batch_size, ["negative"] * batch_size, height, width, denoising_steps=steps, warmup=True
-        )
+        prompt, negative = warmup_prompts()
+        pipeline.run([prompt] * batch_size, [negative] * batch_size, height, width, denoising_steps=steps)
 
     # Run warm up, and measure GPU memory of two runs
     # The first run has algo search so it might need more memory
@@ -682,31 +739,29 @@ def run_tensorrt_static(
 
     warmup()
 
-    image_filename_prefix = get_image_filename_prefix("trt", model_name, batch_size, disable_safety_checker)
+    image_filename_prefix = get_image_filename_prefix("trt", model_name, batch_size, steps, disable_safety_checker)
 
     latency_list = []
     prompts, negative_prompt = example_prompts()
     for i, prompt in enumerate(prompts):
         if i >= num_prompts:
             break
-        for j in range(batch_count):
-            inference_start = time.time()
-            # Use warmup mode here since non-warmup mode will save image to disk.
-            images, pipeline_time = pipeline.run(
-                [prompt] * batch_size,
-                [negative_prompt] * batch_size,
-                height,
-                width,
-                denoising_steps=steps,
-                guidance=7.5,
-                seed=123,
-            )
-            inference_end = time.time()
-            latency = inference_end - inference_start
-            latency_list.append(latency)
-            print(f"End2End took {latency:.3f} seconds. Inference latency: {pipeline_time}")
-            for k, image in enumerate(images):
-                image.save(f"{image_filename_prefix}_{i}_{j}_{k}.jpg")
+        inference_start = time.time()
+        # Use warmup mode here since non-warmup mode will save image to disk.
+        images, pipeline_time = pipeline.run(
+            [prompt] * batch_size,
+            [negative_prompt] * batch_size,
+            height,
+            width,
+            denoising_steps=steps,
+            seed=123,
+        )
+        inference_end = time.time()
+        latency = inference_end - inference_start
+        latency_list.append(latency)
+        print(f"End2End took {latency:.3f} seconds. Inference latency: {pipeline_time}")
+        for k, image in enumerate(images):
+            image.save(f"{image_filename_prefix}_{i}_{k}.jpg")
 
     pipeline.teardown()
 
@@ -828,7 +883,8 @@ def run_tensorrt_static_xl(
         )
 
     def warmup():
-        run_sd_xl_inference(["warm up"] * batch_size, ["negative"] * batch_size)
+        prompt, negative = warmup_prompts()
+        run_sd_xl_inference([prompt] * batch_size, [negative] * batch_size)
 
     # Run warm up, and measure GPU memory of two runs
     # The first run has algo search so it might need more memory
@@ -838,27 +894,22 @@ def run_tensorrt_static_xl(
     warmup()
 
     model_name = pipeline_info.name()
-    image_filename_prefix = get_image_filename_prefix("trt", model_name, batch_size, disable_safety_checker)
+    image_filename_prefix = get_image_filename_prefix("trt", model_name, batch_size, steps, disable_safety_checker)
 
     latency_list = []
     prompts, negative_prompt = example_prompts()
     for i, prompt in enumerate(prompts):
         if i >= num_prompts:
             break
-        for j in range(batch_count):
-            inference_start = time.time()
-            # Use warmup mode here since non-warmup mode will save image to disk.
-            if nvtx_profile:
-                cudart.cudaProfilerStart()
-            images, pipeline_time = run_sd_xl_inference([prompt] * batch_size, [negative_prompt] * batch_size, seed=123)
-            if nvtx_profile:
-                cudart.cudaProfilerStop()
-            inference_end = time.time()
-            latency = inference_end - inference_start
-            latency_list.append(latency)
-            print(f"End2End took {latency:.3f} seconds. Inference latency: {pipeline_time}")
-            for k, image in enumerate(images):
-                image.save(f"{image_filename_prefix}_{i}_{j}_{k}.png")
+        inference_start = time.time()
+        # Use warmup mode here since non-warmup mode will save image to disk.
+        images, pipeline_time = run_sd_xl_inference([prompt] * batch_size, [negative_prompt] * batch_size, seed=123)
+        inference_end = time.time()
+        latency = inference_end - inference_start
+        latency_list.append(latency)
+        print(f"End2End took {latency:.3f} seconds. Inference latency: {pipeline_time}")
+        for k, image in enumerate(images):
+            image.save(f"{image_filename_prefix}_{i}_{k}.png")
 
     pipeline.teardown()
 
@@ -911,8 +962,6 @@ def run_ort_trt_xl(
         opt_batch_size=batch_size,
     )
 
-    from cuda import cudart
-
     assert batch_size <= max_batch_size
 
     pipeline.load_resources(height, width, batch_size)
@@ -929,7 +978,8 @@ def run_ort_trt_xl(
         )
 
     def warmup():
-        run_sd_xl_inference(["warm up"] * batch_size, ["negative"] * batch_size)
+        prompt, negative = warmup_prompts()
+        run_sd_xl_inference([prompt] * batch_size, [negative] * batch_size)
 
     # Run warm up, and measure GPU memory of two runs
     # The first run has algo search so it might need more memory
@@ -939,29 +989,24 @@ def run_ort_trt_xl(
     warmup()
 
     model_name = pipeline.pipeline_info.name()
-    image_filename_prefix = get_image_filename_prefix("ort_trt", model_name, batch_size, disable_safety_checker)
+    image_filename_prefix = get_image_filename_prefix("ort_trt", model_name, batch_size, steps, disable_safety_checker)
 
     latency_list = []
     prompts, negative_prompt = example_prompts()
     for i, prompt in enumerate(prompts):
         if i >= num_prompts:
             break
-        for j in range(batch_count):
-            inference_start = time.time()
-            # Use warmup mode here since non-warmup mode will save image to disk.
-            if nvtx_profile:
-                cudart.cudaProfilerStart()
-            images, pipeline_time = run_sd_xl_inference([prompt] * batch_size, [negative_prompt] * batch_size, seed=123)
-            if nvtx_profile:
-                cudart.cudaProfilerStop()
-            inference_end = time.time()
-            latency = inference_end - inference_start
-            latency_list.append(latency)
-            print(f"End2End took {latency:.3f} seconds. Inference latency: {pipeline_time}")
-            for k, image in enumerate(images):
-                filename = f"{image_filename_prefix}_{i}_{j}_{k}.png"
-                image.save(filename)
-                print("Image saved to", filename)
+        inference_start = time.time()
+        # Use warmup mode here since non-warmup mode will save image to disk.
+        images, pipeline_time = run_sd_xl_inference([prompt] * batch_size, [negative_prompt] * batch_size, seed=123)
+        inference_end = time.time()
+        latency = inference_end - inference_start
+        latency_list.append(latency)
+        print(f"End2End took {latency:.3f} seconds. Inference latency: {pipeline_time}")
+        for k, image in enumerate(images):
+            filename = f"{image_filename_prefix}_{i}_{k}.png"
+            image.save(filename)
+            print("Image saved to", filename)
 
     pipeline.teardown()
 
@@ -1012,7 +1057,7 @@ def run_torch(
     load_end = time.time()
     print(f"Model loading took {load_end - load_start} seconds")
 
-    image_filename_prefix = get_image_filename_prefix("torch", model_name, batch_size, disable_safety_checker)
+    image_filename_prefix = get_image_filename_prefix("torch", model_name, batch_size, steps, disable_safety_checker)
 
     if not enable_torch_compile:
         with torch.inference_mode():
@@ -1138,6 +1183,14 @@ def parse_arguments():
     parser.set_defaults(use_xformers=False)
 
     parser.add_argument(
+        "--use_io_binding",
+        required=False,
+        action="store_true",
+        help="Use I/O Binding for Optimum.",
+    )
+    parser.set_defaults(use_io_binding=False)
+
+    parser.add_argument(
         "-b",
         "--batch_size",
         type=int,
@@ -1176,8 +1229,8 @@ def parse_arguments():
         "--num_prompts",
         required=False,
         type=int,
-        default=1,
-        help="Number of prompts. Default is 1.",
+        default=10,
+        help="Number of prompts. Default is 10.",
     )
 
     parser.add_argument(
@@ -1312,6 +1365,7 @@ def main():
             batch_count=args.batch_count,
             start_memory=start_memory,
             memory_monitor_type=memory_monitor_type,
+            use_io_binding=args.use_io_binding,
         )
     elif args.engine == "onnxruntime":
         assert args.pipeline and os.path.isdir(

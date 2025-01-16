@@ -117,6 +117,7 @@ def run_onnxruntime(
     if (
         use_gpu
         and ("CUDAExecutionProvider" not in onnxruntime.get_available_providers())
+        and ("MIGraphXExecutionProvider" not in onnxruntime.get_available_providers())
         and ("ROCMExecutionProvider" not in onnxruntime.get_available_providers())
         and ("DmlExecutionProvider" not in onnxruntime.get_available_providers())
     ):
@@ -348,7 +349,7 @@ def run_pytorch(
         else:
             tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
 
-            max_input_size = tokenizer.max_model_input_sizes.get(model_name, 1024)
+            max_input_size = tokenizer.model_max_length
 
         logger.debug(f"Model {model}")
         logger.debug(f"Number of parameters {model.num_parameters()}")
@@ -500,7 +501,7 @@ def run_tensorflow(
 
         tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
 
-        max_input_size = tokenizer.max_model_input_sizes.get(model_name, 1024)
+        max_input_size = tokenizer.model_max_length
 
         for batch_size in batch_sizes:
             if batch_size <= 0:

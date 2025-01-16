@@ -5,24 +5,27 @@
 
 #include <filesystem>
 #include <unordered_set>
+
 #include "core/framework/compute_capability.h"
-#include "core/graph/graph_viewer.h"
-#include "core/session/onnxruntime_session_options_config_keys.h"
-#include "core/session/onnxruntime_run_options_config_keys.h"
-#include "core/session/onnxruntime_cxx_api.h"
 #include "core/framework/kernel_registry.h"
+#include "core/framework/run_options.h"
+#include "core/graph/graph_viewer.h"
 #include "core/optimizer/qdq_transformer/selectors_actions/qdq_selectors.h"
 #include "core/optimizer/qdq_transformer/selectors_actions/shared/utils.h"
 #include "core/platform/env.h"
 #include "core/providers/common.h"
 #include "core/providers/partitioning_utils.h"
-#include "core/providers/partitioning_utils.h"
-#include "core/providers/qnn/builder/qnn_model_wrapper.h"
-#include "core/providers/qnn/builder/op_builder_factory.h"
-#include "core/providers/qnn/builder/qnn_node_group.h"
-#include "core/providers/qnn/builder/qnn_def.h"
 #include "core/providers/qnn/builder/onnx_ctx_model_helper.h"
-#include "core/framework/run_options.h"
+#include "core/providers/qnn/builder/op_builder_factory.h"
+#include "core/providers/qnn/builder/qnn_def.h"
+#include "core/providers/qnn/builder/qnn_model_wrapper.h"
+#include "core/providers/qnn/builder/qnn_node_group.h"
+#include "core/providers/qnn/qnn_allocator.h"
+#include "core/providers/qnn/rpcmem_library.h"
+#include "core/providers/qnn/shared_context.h"
+#include "core/session/onnxruntime_cxx_api.h"
+#include "core/session/onnxruntime_run_options_config_keys.h"
+#include "core/session/onnxruntime_session_options_config_keys.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -36,8 +39,8 @@ constexpr const char* QNN = "QNN";
 static std::unique_ptr<std::vector<std::function<void()>>> s_run_on_unload_;
 
 void RunOnUnload(std::function<void()> function) {
-  static OrtMutex mutex;
-  std::lock_guard<OrtMutex> guard(mutex);
+  static std::mutex mutex;
+  std::lock_guard<std::mutex> guard(mutex);
   if (!s_run_on_unload_) {
     s_run_on_unload_ = std::make_unique<std::vector<std::function<void()>>>();
   }
@@ -204,7 +207,7 @@ QNNExecutionProvider::QNNExecutionProvider(const ProviderOptions& provider_optio
     LOGS_DEFAULT(VERBOSE) << "Context cache enable: " << context_cache_enabled_;
 
     std::string embed_mode = session_options->config_options.GetConfigOrDefault(
-        kOrtSessionOptionEpContextEmbedMode, "1");
+        kOrtSessionOptionEpContextEmbedMode, "0");
     if ("1" == embed_mode) {
       qnn_context_embed_mode_ = true;
     } else if ("0" == embed_mode) {
@@ -257,49 +260,6 @@ QNNExecutionProvider::QNNExecutionProvider(const ProviderOptions& provider_optio
       }
     }
   }
-
-#ifdef _WIN32
-  auto& etwRegistrationManager = logging::EtwRegistrationManager::Instance();
-  // Register callback for ETW capture state (rundown)
-  callback_ETWSink_provider_ = onnxruntime::logging::EtwRegistrationManager::EtwInternalCallback(
-      [&etwRegistrationManager, this](
-          LPCGUID SourceId,
-          ULONG IsEnabled,
-          UCHAR Level,
-          ULONGLONG MatchAnyKeyword,
-          ULONGLONG MatchAllKeyword,
-          PEVENT_FILTER_DESCRIPTOR FilterData,
-          PVOID CallbackContext) {
-        ORT_UNUSED_PARAMETER(SourceId);
-        ORT_UNUSED_PARAMETER(MatchAnyKeyword);
-        ORT_UNUSED_PARAMETER(MatchAllKeyword);
-        ORT_UNUSED_PARAMETER(FilterData);
-        ORT_UNUSED_PARAMETER(CallbackContext);
-
-        if (IsEnabled == EVENT_CONTROL_CODE_ENABLE_PROVIDER) {
-          if ((MatchAnyKeyword & static_cast<ULONGLONG>(onnxruntime::logging::ORTTraceLoggingKeyword::Logs)) != 0) {
-            auto ortETWSeverity = etwRegistrationManager.MapLevelToSeverity();
-            (void)qnn_backend_manager_->UpdateQnnLogLevel(ortETWSeverity);
-          }
-          if ((MatchAnyKeyword & static_cast<ULONGLONG>(onnxruntime::logging::ORTTraceLoggingKeyword::Profiling)) != 0) {
-            if (Level != 0) {
-              // Commenting out Dynamic QNN Profiling for now
-              // There seems to be a crash in 3rd party QC QnnHtp.dll with this.
-              // Repro Scenario - start ETW tracing prior to session creation.
-              //    Then disable/enable ETW Tracing with the code below uncommented a few times
-              // auto profiling_level_etw = GetProfilingLevelFromETWLevel(Level);
-              // (void)qnn_backend_manager_->SetProfilingLevelETW(profiling_level_etw);
-            }
-          }
-        }
-
-        if (IsEnabled == EVENT_CONTROL_CODE_DISABLE_PROVIDER) {
-          // (void)qnn_backend_manager_->SetProfilingLevelETW(qnn::ProfilingLevel::INVALID);
-          (void)qnn_backend_manager_->ResetQnnLogLevel();
-        }
-      });
-  etwRegistrationManager.RegisterInternalCallback(callback_ETWSink_provider_);
-#endif
 
   // In case ETW gets disabled later
   auto profiling_level_pos = provider_options_map.find(PROFILING_LEVEL);
@@ -406,19 +366,23 @@ QNNExecutionProvider::QNNExecutionProvider(const ProviderOptions& provider_optio
     LOGS_DEFAULT(VERBOSE) << "User specified enable_htp_fp16_precision: " << enable_HTP_FP16_precision_;
   }
 
+  bool enable_htp_weight_sharing = false;
   static const std::string QNN_HTP_WEIGHT_SHARING_ENABLED = "enable_htp_weight_sharing";
   auto htp_weight_sharing_enabled_pos = provider_options_map.find(QNN_HTP_WEIGHT_SHARING_ENABLED);
   if (htp_weight_sharing_enabled_pos != provider_options_map.end()) {
     if ("1" == htp_weight_sharing_enabled_pos->second) {
-      enable_htp_weight_sharing_ = true;
+      enable_htp_weight_sharing = true;
     } else if ("0" == htp_weight_sharing_enabled_pos->second) {
-      enable_htp_weight_sharing_ = false;
+      enable_htp_weight_sharing = false;
     } else {
-      LOGS_DEFAULT(VERBOSE) << "Invalid enable_htp_weight_sharing: " << enable_htp_weight_sharing_
+      LOGS_DEFAULT(VERBOSE) << "Invalid enable_htp_weight_sharing: " << enable_htp_weight_sharing
                             << " only 0 or 1 allowed. Set to 0.";
     }
-    LOGS_DEFAULT(VERBOSE) << "User specified enable_htp_weight_sharing: " << enable_htp_weight_sharing_;
+    LOGS_DEFAULT(VERBOSE) << "User specified enable_htp_weight_sharing: " << enable_htp_weight_sharing;
   }
+
+  // Add this option because this feature requires QnnSystem lib and it's no supported for Windows x86_64 platform
+  enable_spill_fill_buffer_ = ParseBoolOption("enable_htp_spill_fill_buffer", false, provider_options_map);
 
   model_settings_.offload_graph_io_quantization = ParseBoolOption("offload_graph_io_quantization", false,
                                                                   provider_options_map);
@@ -429,22 +393,72 @@ QNNExecutionProvider::QNNExecutionProvider(const ProviderOptions& provider_optio
                           << "handles the graph I/O quantization/dequantization.";
   }
 
-  qnn_backend_manager_ = std::make_unique<qnn::QnnBackendManager>(
-      std::move(backend_path),
-      profiling_level_etw,
-      profiling_level,
-      std::move(profiling_file_path),
-      context_priority,
-      std::move(qnn_saver_path),
-      device_id_,
-      htp_arch,
-      soc_model,
-      enable_htp_weight_sharing_);
+  static const std::string QNN_HTP_SHARED_MEMORY_ALLOCATOR_ENABLED = "enable_htp_shared_memory_allocator";
+  if (ParseBoolOption(QNN_HTP_SHARED_MEMORY_ALLOCATOR_ENABLED, false, provider_options_map)) {
+    // Initialize rpcmem_library_.
+    // This is necessary for HtpSharedMemoryAllocator to function and also indicates that the allocator is available.
+    rpcmem_library_ = std::make_shared<qnn::RpcMemLibrary>();
+  }
+
+  qnn_backend_manager_ = qnn::QnnBackendManager::Create(
+      qnn::QnnBackendManagerConfig{backend_path,
+                                   profiling_level_etw,
+                                   profiling_level,
+                                   profiling_file_path,
+                                   context_priority,
+                                   qnn_saver_path,
+                                   device_id_,
+                                   htp_arch,
+                                   soc_model,
+                                   enable_htp_weight_sharing});
+
+#ifdef _WIN32
+  auto& etwRegistrationManager = logging::EtwRegistrationManager::Instance();
+  // Register callback for ETW capture state (rundown)
+  callback_ETWSink_provider_ = onnxruntime::logging::EtwRegistrationManager::EtwInternalCallback(
+      [&etwRegistrationManager, this](
+          LPCGUID SourceId,
+          ULONG IsEnabled,
+          UCHAR Level,
+          ULONGLONG MatchAnyKeyword,
+          ULONGLONG MatchAllKeyword,
+          PEVENT_FILTER_DESCRIPTOR FilterData,
+          PVOID CallbackContext) {
+        ORT_UNUSED_PARAMETER(SourceId);
+        ORT_UNUSED_PARAMETER(MatchAnyKeyword);
+        ORT_UNUSED_PARAMETER(MatchAllKeyword);
+        ORT_UNUSED_PARAMETER(FilterData);
+        ORT_UNUSED_PARAMETER(CallbackContext);
+
+        if (IsEnabled == EVENT_CONTROL_CODE_ENABLE_PROVIDER) {
+          if ((MatchAnyKeyword & static_cast<ULONGLONG>(onnxruntime::logging::ORTTraceLoggingKeyword::Logs)) != 0) {
+            auto ortETWSeverity = etwRegistrationManager.MapLevelToSeverity();
+            (void)qnn_backend_manager_->ResetQnnLogLevel(ortETWSeverity);
+          }
+          if ((MatchAnyKeyword & static_cast<ULONGLONG>(onnxruntime::logging::ORTTraceLoggingKeyword::Profiling)) != 0) {
+            if (Level != 0) {
+              // Commenting out Dynamic QNN Profiling for now
+              // There seems to be a crash in 3rd party QC QnnHtp.dll with this.
+              // Repro Scenario - start ETW tracing prior to session creation.
+              //    Then disable/enable ETW Tracing with the code below uncommented a few times
+              // auto profiling_level_etw = GetProfilingLevelFromETWLevel(Level);
+              // (void)qnn_backend_manager_->SetProfilingLevelETW(profiling_level_etw);
+            }
+          }
+        }
+
+        if (IsEnabled == EVENT_CONTROL_CODE_DISABLE_PROVIDER) {
+          // (void)qnn_backend_manager_->SetProfilingLevelETW(qnn::ProfilingLevel::INVALID);
+          (void)qnn_backend_manager_->ResetQnnLogLevel(std::nullopt);
+        }
+      });
+  etwRegistrationManager.RegisterInternalCallback(callback_ETWSink_provider_);
+#endif
 }
 
 QNNExecutionProvider::~QNNExecutionProvider() {
   // clean up thread local context caches
-  std::lock_guard<OrtMutex> lock(context_state_.mutex);
+  std::lock_guard<std::mutex> lock(context_state_.mutex);
   for (const auto& cache_weak : context_state_.caches_to_update_on_destruction) {
     const auto cache = cache_weak.lock();
     if (!cache) continue;
@@ -453,7 +467,9 @@ QNNExecutionProvider::~QNNExecutionProvider() {
 
   // Unregister the ETW callback
 #ifdef _WIN32
-  logging::EtwRegistrationManager::Instance().UnregisterInternalCallback(callback_ETWSink_provider_);
+  if (callback_ETWSink_provider_ != nullptr) {
+    logging::EtwRegistrationManager::Instance().UnregisterInternalCallback(callback_ETWSink_provider_);
+  }
 #endif
 }
 
@@ -684,7 +700,8 @@ QNNExecutionProvider::GetCapability(const onnxruntime::GraphViewer& graph_viewer
 
   // It will load the QnnSystem lib if is_qnn_ctx_model=true, and
   // delay the Qnn context creation to Compile() using the cached context binary
-  auto rt = qnn_backend_manager_->SetupBackend(logger, is_qnn_ctx_model);
+  // or generate context cache enable, need to use use QnnSystem lib to parse the binary to get the max spill fill buffer size
+  auto rt = qnn_backend_manager_->SetupBackend(logger, is_qnn_ctx_model, context_cache_enabled_ && enable_spill_fill_buffer_);
   if (Status::OK() != rt) {
     LOGS(logger, ERROR) << "QNN SetupBackend failed " << rt.ErrorMessage();
     return result;
@@ -711,7 +728,7 @@ QNNExecutionProvider::GetCapability(const onnxruntime::GraphViewer& graph_viewer
   std::vector<std::unique_ptr<NodeUnit>> node_unit_holder;
   std::unordered_map<const Node*, const NodeUnit*> node_unit_map;
 
-  std::tie(node_unit_holder, node_unit_map) = QDQ::GetAllNodeUnits(graph_viewer);
+  std::tie(node_unit_holder, node_unit_map) = QDQ::GetAllNodeUnits(graph_viewer, logger);
 
   // remove is_qnn_ctx_model related code
   const auto supported_nodes = GetSupportedNodes(graph_viewer, node_unit_map,
@@ -932,6 +949,16 @@ Status QNNExecutionProvider::Compile(const std::vector<FusedNodeAndGraph>& fused
 
     std::vector<int> main_context_pos_list;
     ORT_RETURN_IF_ERROR(qnn::GetMainContextNode(fused_nodes_and_graphs, main_context_pos_list));
+    uint32_t total_context_size = SafeInt<uint32_t>(main_context_pos_list.size());
+
+    int64_t max_spill_fill_size = 0;
+
+    // Adjust the main_context_pos_list, move the one with max spill fill buffer to the beginning
+    // HTP spill fill buffer only works for multiple QNN contexts generated after QNN v2.28
+    if (total_context_size > 1) {
+      ORT_RETURN_IF_ERROR(qnn::TryGetMaxSpillFillSize(fused_nodes_and_graphs, total_context_size,
+                                                      max_spill_fill_size, main_context_pos_list));
+    }
 
     for (auto main_context_pos : main_context_pos_list) {
       const onnxruntime::GraphViewer& main_ctx_graph_viewer(fused_nodes_and_graphs[main_context_pos].filtered_graph);
@@ -940,7 +967,8 @@ Status QNNExecutionProvider::Compile(const std::vector<FusedNodeAndGraph>& fused
                                                        context_cache_path,
                                                        qnn_backend_manager_.get(),
                                                        qnn_models,
-                                                       logger));
+                                                       logger,
+                                                       max_spill_fill_size));
     }
 
     for (auto fused_node_and_graph : fused_nodes_and_graphs) {
@@ -982,6 +1010,13 @@ Status QNNExecutionProvider::Compile(const std::vector<FusedNodeAndGraph>& fused
     // All partitioned graph share single QNN context, included in the same context binary
     uint64_t buffer_size(0);
     auto context_buffer = qnn_backend_manager_->GetContextBinaryBuffer(buffer_size);
+    // Get max spill fill buffer size
+    uint64_t max_spill_fill_buffer_size = 0;
+    if (enable_spill_fill_buffer_) {
+      ORT_RETURN_IF_ERROR(qnn_backend_manager_->GetMaxSpillFillBufferSize(context_buffer.get(),
+                                                                          buffer_size,
+                                                                          max_spill_fill_buffer_size));
+    }
     qnn_ep_context_model_ = std::make_unique<Model>("qnn_ep_context_model", false, logger);
     ORT_RETURN_IF_ERROR(qnn::CreateEPContextNodes(qnn_ep_context_model_.get(),
                                                   context_buffer.get(),
@@ -991,6 +1026,7 @@ Status QNNExecutionProvider::Compile(const std::vector<FusedNodeAndGraph>& fused
                                                   qnn_models_,
                                                   context_cache_path,
                                                   qnn_context_embed_mode_,
+                                                  max_spill_fill_buffer_size,
                                                   logger));
   }
   return Status::OK();
@@ -1050,7 +1086,7 @@ QNNExecutionProvider::PerThreadContext& QNNExecutionProvider::GetPerThreadContex
   // get context and update cache
   std::shared_ptr<PerThreadContext> context;
   {
-    std::lock_guard<OrtMutex> lock(context_state_.mutex);
+    std::lock_guard<std::mutex> lock(context_state_.mutex);
 
     // get or create a context
     if (context_state_.retired_context_pool.empty()) {
@@ -1084,7 +1120,7 @@ void QNNExecutionProvider::ReleasePerThreadContext() const {
   ORT_ENFORCE(cached_context);
 
   {
-    std::lock_guard<OrtMutex> lock(context_state_.mutex);
+    std::lock_guard<std::mutex> lock(context_state_.mutex);
     context_state_.active_contexts.erase(cached_context);
     context_state_.retired_context_pool.push_back(cached_context);
   }
@@ -1150,4 +1186,25 @@ Status QNNExecutionProvider::OnRunEnd(bool /*sync_stream*/, const onnxruntime::R
 
   return Status::OK();
 }
+
+std::vector<AllocatorPtr> QNNExecutionProvider::CreatePreferredAllocators() {
+  std::vector<AllocatorPtr> allocators{};
+
+  if (IsHtpSharedMemoryAllocatorAvailable()) {
+    LOGS_DEFAULT(INFO) << "Creating HtpSharedMemoryAllocator.";
+
+    AllocatorFactory rpcmem_allocator_factory = [this](OrtDevice::DeviceId) {
+      return std::make_unique<qnn::HtpSharedMemoryAllocator>(rpcmem_library_);
+    };
+
+    AllocatorCreationInfo rpcmem_allocator_creation_info{rpcmem_allocator_factory,
+                                                         /* device_id */ 0,
+                                                         /* use_arena */ false};
+
+    allocators.emplace_back(CreateAllocator(rpcmem_allocator_creation_info));
+  }
+
+  return allocators;
+}
+
 }  // namespace onnxruntime
