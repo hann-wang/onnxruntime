@@ -59,6 +59,12 @@ Status LaunchGroupNormKernel(
   return GroupNormNHWCStaticSelection(&params);
 }
 
+template Status LaunchGroupNormKernel<BFloat16>(RocmTuningContext* tuning_ctx, Stream* stream, BFloat16* output,
+                                                BFloat16* add_out, const BFloat16* input, const BFloat16* skip, const BFloat16* bias,
+                                                const float* gamma, const float* beta, void* workspace, float epsilon,
+                                                int batch_size, int num_channels, int height, int width, int num_groups,
+                                                bool use_silu, bool broadcast_skip, int channels_per_block);
+
 template Status LaunchGroupNormKernel<half>(RocmTuningContext* tuning_ctx, Stream* stream, half* output,
                                             half* add_out, const half* input, const half* skip, const half* bias,
                                             const float* gamma, const float* beta, void* workspace, float epsilon,

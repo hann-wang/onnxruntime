@@ -17,6 +17,7 @@ namespace internal {
 
 using F16 = ck::half_t;
 using F32 = float;
+using B16 = ck::bhalf_t;
 
 using Silu = ck::tensor_operation::element_wise::Swish;
 using Pass = ck::tensor_operation::element_wise::PassThrough;
@@ -75,8 +76,34 @@ using device_normalization_f16_instances =
         DeviceNormalizationFwdImpl<F16, F32, F32, F32, F16, F32, OutElementwise, Rank, Reduce, 512, 1, 512, 1, 16, 1, 8, 1, 8, 1, 8, 8, 1>,
         DeviceNormalizationFwdImpl<F16, F32, F32, F32, F16, F32, OutElementwise, Rank, Reduce, 1024, 1, 1024, 1, 8, 1, 8, 1, 8, 1, 8, 8, 1>,
         DeviceNormalizationFwdImpl<F16, F32, F32, F32, F16, F32, OutElementwise, Rank, Reduce, 1024, 1, 1024, 1, 16, 1, 8, 1, 8, 1, 8, 8, 1>
-    // clang-format on
-    >;
+        // clang-format on
+        >;
+
+template <typename OutElementwise, ck::index_t Rank, ck::index_t Reduce>
+using device_normalization_b16_instances =
+    // clang-format off
+    std::tuple <
+        // XDataType, GammaDataType, BetaDataType, ComputeDataType, YDataType, SaveMeanInvStdDataType, Rank, NumReduceDim, BlockSize, MThreadClusterSize, KThreadClusterSize, MThreadSliceSize, KThreadSliceSize, XYSrcVectorDim, XSrcVectorSize, GammaSrcVectorDim, GammaSrcVectorSize, BetaSrcVectorDim, BetaSrcVectorSize, YDstVectorSize, SaveMeanInvStdScalarPerVector>
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 128, 1, 128, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>,   // irregular size
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 256, 1, 256, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>,   // irregular size
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 512, 1, 512, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>,   // irregular size
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 1024, 1, 1024, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>, // irregular size
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 256, 1, 256, 1, 2, 1, 2, 1, 2, 1, 2, 2, 1>,   // irregular size
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 256, 1, 256, 1, 4, 1, 4, 1, 4, 1, 4, 4, 1>,   // irregular size
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 64, 1, 64, 1, 8, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 128, 1, 128, 1, 8, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 128, 1, 128, 1, 16, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 128, 1, 128, 1, 32, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 256, 1, 256, 1, 8, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 256, 1, 256, 1, 16, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 256, 1, 256, 2, 16, 1, 8, 1, 8, 1, 8, 8, 2>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 256, 1, 256, 1, 32, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 512, 1, 512, 1, 8, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 512, 1, 512, 1, 16, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 1024, 1, 1024, 1, 8, 1, 8, 1, 8, 1, 8, 8, 1>,
+        DeviceNormalizationFwdImpl<B16, F32, F32, F32, B16, F32, OutElementwise, Rank, Reduce, 1024, 1, 1024, 1, 16, 1, 8, 1, 8, 1, 8, 8, 1>
+        // clang-format on
+        >;
 
 // Use this function to get implementation
 template <typename XDataType,
@@ -110,6 +137,18 @@ std::vector<std::unique_ptr<DeviceNormalizationFwd<
     F16, F32, F32, F16, F32, Pass, 5, 3>>>
 GetDeviceGroupNormInstances<
     F16, F32, F32, F16, F32, Pass, 5, 3>();
+
+template <>
+std::vector<std::unique_ptr<DeviceNormalizationFwd<
+    B16, F32, F32, B16, F32, Silu, 5, 3>>>
+GetDeviceGroupNormInstances<
+    B16, F32, F32, B16, F32, Silu, 5, 3>();
+
+template <>
+std::vector<std::unique_ptr<DeviceNormalizationFwd<
+    B16, F32, F32, B16, F32, Pass, 5, 3>>>
+GetDeviceGroupNormInstances<
+    B16, F32, F32, B16, F32, Pass, 5, 3>();
 
 template <>
 std::vector<std::unique_ptr<DeviceNormalizationFwd<

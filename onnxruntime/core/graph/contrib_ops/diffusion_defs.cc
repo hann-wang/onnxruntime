@@ -64,8 +64,8 @@ ONNX_MS_OPERATOR_SET_SCHEMA(
                 "Y",
                 "The output tensor of the same shape as X",
                 "T")
-        .TypeConstraint("T", {"tensor(float16)", "tensor(float)"}, "Constrain input X and output Y types to float tensors.")
-        .TypeConstraint("M", {"tensor(float16)", "tensor(float)"}, "Constrain gamma and beta to float tensors.")
+        .TypeConstraint("T", {"tensor(bfloat16)", "tensor(float16)", "tensor(float)"}, "Constrain input X and output Y types to float tensors.")
+        .TypeConstraint("M", {"tensor(bfloat16)", "tensor(float16)", "tensor(float)"}, "Constrain gamma and beta to float tensors.")
         .TypeAndShapeInferenceFunction(ONNX_NAMESPACE::propagateShapeAndTypeFromFirstInput));
 
 constexpr const char* SkipGroupNorm_ver1_doc = R"DOC(
