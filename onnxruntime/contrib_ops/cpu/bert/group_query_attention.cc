@@ -39,9 +39,7 @@ REGISTER_KERNEL_TYPED(MLFloat16)
 
 template <typename T>
 GroupQueryAttention<T>::GroupQueryAttention(const OpKernelInfo& info)
-    : OpKernel(info), GQAAttentionBase(info, true) {
-  is_unidirectional_ = info.GetAttrOrDefault<int64_t>("unidirectional", 1) == 1;
-}
+    : OpKernel(info), GQAAttentionBase(info, true) {}
 
 template <typename T>
 Status GroupQueryAttention<T>::Compute(OpKernelContext* context) const {

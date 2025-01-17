@@ -15,9 +15,6 @@ class GroupQueryAttention final : public OpKernel, public GQAAttentionBase {
  public:
   GroupQueryAttention(const OpKernelInfo& info);
   Status Compute(OpKernelContext* context) const override;
-
- protected:
-  bool is_unidirectional_;
 };
 
 }  // namespace contrib
