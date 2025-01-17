@@ -48,6 +48,16 @@ class ToHipType<MLFloat16> {
   }
 };
 
+template <>
+class ToHipType<BFloat16> {
+ public:
+  typedef __hip_bfloat16 MappedType;
+  static MappedType FromFloat(float f) {
+    auto d = BFloat16(f);
+    return *reinterpret_cast<MappedType*>(&d.val);
+  }
+};
+
 inline bool CalculateFdmStrides(gsl::span<fast_divmod> p, const std::vector<int64_t>& dims) {
   int stride = 1;
   if (dims.empty() || p.size() < dims.size())
