@@ -195,7 +195,7 @@ Status GroupQueryAttention<T>::Compute(OpKernelContext* context) const {
   // Compute the attention score and apply the score to V
   return ApplyAttention(q_rotary, packed_qkv ? nullptr : k_rotary, packed_qkv ? nullptr : V.Get<Tensor>().Data<T>(),
                         past_key, past_value, output, present_k, present_v,
-                        seqlens_k, parameters, allocator, context, is_unidirectional_);
+                        seqlens_k, parameters, allocator, context);
 }
 }  // namespace contrib
 }  // namespace onnxruntime
