@@ -44,10 +44,22 @@ ONNX_OPERATOR_VERSIONED_KERNEL_EX(
         .TypeConstraint("T1", DataTypeImpl::GetTensorType<int64_t>()),
     Shape);
 
+ONNX_OPERATOR_VERSIONED_KERNEL_EX(
+    Shape,
+    kOnnxDomain,
+    19, 20,
+    kCudaExecutionProvider,
+    (*KernelDefBuilder::Create())
+        // properly force CPU/GPU synch inside the kernel
+        .OutputMemoryType(OrtMemTypeCPUOutput, 0)
+        .TypeConstraint("T", DataTypeImpl::AllFixedSizeTensorTypesIRv9())
+        .TypeConstraint("T1", DataTypeImpl::GetTensorType<int64_t>()),
+    Shape);
+
 ONNX_OPERATOR_KERNEL_EX(
     Shape,
     kOnnxDomain,
-    19,
+    21,
     kCudaExecutionProvider,
     (*KernelDefBuilder::Create())
         // properly force CPU/GPU synch inside the kernel

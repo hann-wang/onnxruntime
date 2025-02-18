@@ -19,10 +19,19 @@ ONNX_OPERATOR_VERSIONED_KERNEL_EX(
         .TypeConstraint("T", DataTypeImpl::AllFixedSizeTensorTypes()),
     Transpose);
 
+ONNX_OPERATOR_VERSIONED_KERNEL_EX(
+    Transpose,
+    kOnnxDomain,
+    13, 20,
+    kCudaExecutionProvider,
+    (*KernelDefBuilder::Create())
+        .TypeConstraint("T", DataTypeImpl::AllFixedSizeTensorTypes()),
+    Transpose);
+
 ONNX_OPERATOR_KERNEL_EX(
     Transpose,
     kOnnxDomain,
-    13,
+    21,
     kCudaExecutionProvider,
     (*KernelDefBuilder::Create())
         .TypeConstraint("T", DataTypeImpl::AllFixedSizeTensorTypes()),

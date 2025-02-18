@@ -66,10 +66,20 @@ const std::vector<MLDataType>& CastOpTypeConstraints() {
           .TypeConstraint("T1", DataTypeImpl::GetTensorType<T>()) \
           .TypeConstraint("T2", CastOpTypeConstraints()),         \
       Cast<T>);                                                   \
+  ONNX_OPERATOR_VERSIONED_TYPED_KERNEL_EX(                        \
+      Cast,                                                       \
+      kOnnxDomain,                                                \
+      19, 20,                                                     \
+      T,                                                          \
+      kCudaExecutionProvider,                                     \
+      (*KernelDefBuilder::Create())                               \
+          .TypeConstraint("T1", DataTypeImpl::GetTensorType<T>()) \
+          .TypeConstraint("T2", CastOpTypeConstraints()),         \
+      Cast<T>);                                                   \
   ONNX_OPERATOR_TYPED_KERNEL_EX(                                  \
       Cast,                                                       \
       kOnnxDomain,                                                \
-      19,                                                         \
+      21,                                                         \
       T,                                                          \
       kCudaExecutionProvider,                                     \
       (*KernelDefBuilder::Create())                               \

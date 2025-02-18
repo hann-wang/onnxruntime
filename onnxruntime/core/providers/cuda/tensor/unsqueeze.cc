@@ -28,10 +28,21 @@ ONNX_OPERATOR_VERSIONED_KERNEL_EX(
     Unsqueeze);
 
 // axes is input instead of attribute, support bfloat16
+ONNX_OPERATOR_VERSIONED_KERNEL_EX(
+    Unsqueeze,
+    kOnnxDomain,
+    13, 20,
+    kCudaExecutionProvider,
+    (*KernelDefBuilder::Create())
+        .Alias(0, 0)
+        .TypeConstraint("T", DataTypeImpl::AllFixedSizeTensorTypes())
+        .InputMemoryType(OrtMemTypeCPUInput, 1),
+    Unsqueeze);
+
 ONNX_OPERATOR_KERNEL_EX(
     Unsqueeze,
     kOnnxDomain,
-    13,
+    21,
     kCudaExecutionProvider,
     (*KernelDefBuilder::Create())
         .Alias(0, 0)
