@@ -45,7 +45,7 @@ ONNX_OPERATOR_KERNEL_EX(
     11,
     kCudaExecutionProvider,
     (*KernelDefBuilder::Create())
-        .OutputMemoryType(OrtMemTypeCPUInput, 0)
+        .OutputMemoryType(OrtMemTypeCPUOutput, 0)
         .TypeConstraint("S", DataTypeImpl::AllFixedSizeSequenceTensorTypes())
         .TypeConstraint("I", DataTypeImpl::GetTensorType<int64_t>()),
     SequenceLength);
