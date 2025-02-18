@@ -76,7 +76,7 @@ common::Status GPUDataTransfer::CopyTensorAsync(const Tensor& src, Tensor& dst, 
     // For best performance, use hipHostMalloc to allocate host memory that is transferred asynchronously.
     HIP_RETURN_IF_ERROR(hipMemcpyAsync(dst_data, src_data, bytes, hipMemcpyDeviceToHost, static_cast<hipStream_t>(stream.GetHandle())));
   } else {
-    if (src_device.MemType() == OrtDevice::MemType::CUDA_PINNED) {
+    if (src_device.MemType() == OrtDevice::MemType::HIP_PINNED) {
       // sync the stream first to make sure the data arrived
       HIP_RETURN_IF_ERROR(hipStreamSynchronize(static_cast<hipStream_t>(stream.GetHandle())));
     }
