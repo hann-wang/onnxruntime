@@ -27,7 +27,8 @@ namespace cuda {
           .InputMemoryType(OrtMemTypeCPUInput, 1)                 \
           .InputMemoryType(OrtMemTypeCPUInput, 2)                 \
           .TypeConstraint("T", DataTypeImpl::GetTensorType<T>()), \
-      RelPosAttnBias<T>);                                         \
+      RelPosAttnBias<T>);
+#define REGISTER_GATED_KERNEL_TYPED(T)                            \
   ONNX_OPERATOR_TYPED_KERNEL_EX(                                  \
       GatedRelativePositionBias,                                  \
       kMSDomain,                                                  \
@@ -40,6 +41,10 @@ namespace cuda {
 
 REGISTER_KERNEL_TYPED(float)
 REGISTER_KERNEL_TYPED(MLFloat16)
+#ifndef USE_ROCM
+REGISTER_GATED_KERNEL_TYPED(float)
+REGISTER_GATED_KERNEL_TYPED(MLFloat16)
+#endif
 
 using namespace ONNX_NAMESPACE;
 
@@ -85,6 +90,8 @@ Status RelPosAttnBias<T>::ComputeInternal(OpKernelContext* context) const {
                                            device_prop.maxThreadsPerBlock);
 }
 
+
+#ifndef USE_ROCM
 template <typename T>
 GatedRelativePositionBias<T>::GatedRelativePositionBias(const OpKernelInfo& info) : CudaKernel(info) {
   int64_t num_heads = 0;
@@ -213,6 +220,7 @@ Status GatedRelativePositionBias<T>::ComputeInternal(OpKernelContext* context) c
 
   return status;
 }
+#endif // USE_ROCM
 
 }  // namespace cuda
 }  // namespace contrib

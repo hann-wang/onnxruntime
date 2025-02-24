@@ -287,7 +287,7 @@ template Status LaunchRelPosAttnBiasKernel<half>(cudaStream_t stream,
                                                  const int max_distance,
                                                  const bool is_bidirectional,
                                                  const int max_threads_per_block);
-
+#ifndef USE_ROCM
 namespace {
 
 template <typename T, size_t size>
@@ -460,6 +460,8 @@ template Status LaunchGatedRelativePositionBiasKernel(
     const int seq_len,
     const int D,
     const int ldqw);
+
+#endif // USE_ROCM
 
 }  // namespace cuda
 }  // namespace contrib

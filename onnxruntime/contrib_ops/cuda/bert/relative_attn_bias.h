@@ -22,6 +22,7 @@ class RelPosAttnBias final : public CudaKernel {
   bool is_bidirectional_;
 };
 
+#ifndef USE_ROCM
 template <typename T>
 class GatedRelativePositionBias final : public CudaKernel {
  public:
@@ -32,6 +33,7 @@ class GatedRelativePositionBias final : public CudaKernel {
  private:
   int num_heads_;
 };
+#endif
 
 }  // namespace cuda
 }  // namespace contrib

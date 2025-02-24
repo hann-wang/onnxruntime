@@ -21,6 +21,7 @@ Status LaunchRelPosAttnBiasKernel(
     const bool is_bidirectional,
     const int max_threads_per_block);
 
+#ifndef USE_ROCM
 template <typename T>
 Status LaunchGatedRelativePositionBiasKernel(
     const cudaDeviceProp& device_prop,
@@ -41,6 +42,8 @@ void RestorePaddingAddBiasTranspose(
     const T* query, const T* bias, T* output,
     const int batch_size, const int sequence_length, const int num_heads, const int qk_head_size,
     const int32_t* token_offset, int32_t token_count, cudaStream_t stream);
+
+#endif // USE_ROCM
 
 }  // namespace cuda
 }  // namespace contrib
