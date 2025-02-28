@@ -61,8 +61,8 @@ template <typename T>
 void ComputeAttentionSoftmaxInplace(T* score, int N, int D, ThreadPool* tp) {
   ThreadPool::TryParallelFor(tp, N, D * 2.0, [&](std::ptrdiff_t begin, std::ptrdiff_t end) {
     for (std::ptrdiff_t j = begin; j != end; ++j) {
-      float* x = reinterpret_cast<T*>(score) + j * D;
-      float* y = x;
+      T* x = reinterpret_cast<T*>(score) + j * D;
+      T* y = x;
 
       // e^x is represented as infinity if x is large enough, like 100.f.
       // Infinity divided by Infinity is a NAN. Thus, softmax gets a NAN if
@@ -75,7 +75,7 @@ void ComputeAttentionSoftmaxInplace(T* score, int N, int D, ThreadPool* tp) {
           max = x[i];
       }
       for (int i = 0; i < D; i++) {
-        y[i] = expf(x[i] - max);
+        y[i] = T(expf(x[i] - max));
       }
 
       double sum = 0.0;
@@ -86,11 +86,11 @@ void ComputeAttentionSoftmaxInplace(T* score, int N, int D, ThreadPool* tp) {
 
       if (sum == 0) {
         for (int i = 0; i < D; i++) {
-          y[i] = 1.0f / (float)D;
+          y[i] = T(1.0f / (float)D);
         }
       } else {
         for (int i = 0; i < D; i++) {
-          y[i] = x[i] / (float)sum;
+          y[i] = T(x[i] / (float)sum);
         }
       }
     }

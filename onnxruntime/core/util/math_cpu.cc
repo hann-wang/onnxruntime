@@ -125,6 +125,15 @@ void Gemm<Eigen::half, ThreadPool>(CBLAS_TRANSPOSE TransA, CBLAS_TRANSPOSE Trans
   }
 }
 
+template <>
+void Gemm<MLFloat16, ThreadPool>(CBLAS_TRANSPOSE TransA, CBLAS_TRANSPOSE TransB, ptrdiff_t M,
+                                 ptrdiff_t N, ptrdiff_t K, MLFloat16 alpha, const MLFloat16* A, const MLFloat16* B, MLFloat16 beta,
+                                 MLFloat16* C, ThreadPool* threadpool) {
+  Gemm(TransA, TransB, M, N, K, static_cast<Eigen::half>(alpha), reinterpret_cast<const Eigen::half*>(A),
+       reinterpret_cast<const Eigen::half*>(B), static_cast<Eigen::half>(beta), reinterpret_cast<Eigen::half*>(C),
+       threadpool);
+}
+
 #ifdef MLAS_SUPPORTS_GEMM_DOUBLE
 template <>
 void Gemm<double, ThreadPool>(CBLAS_TRANSPOSE TransA, CBLAS_TRANSPOSE TransB, ptrdiff_t M,
@@ -183,6 +192,13 @@ void Gemm<double, ThreadPool>(CBLAS_TRANSPOSE TransA, CBLAS_TRANSPOSE TransB, pt
 template <>
 void MatMul<float>(ptrdiff_t M, ptrdiff_t N, ptrdiff_t K, const float* A, const float* B, float* C, ThreadPool* threadpool) {
   MlasGemm(CblasNoTrans, CblasNoTrans, M, N, K, 1.f, A, K, B, N, 0.f, C, N, threadpool);
+}
+
+template <>
+void MatMul<MLFloat16>(ptrdiff_t M, ptrdiff_t N, ptrdiff_t K, const MLFloat16* A, const MLFloat16* B, MLFloat16* C, ThreadPool* threadpool) {
+  Gemm(CblasNoTrans, CblasNoTrans, M, N, K, static_cast<Eigen::half>(1.f), reinterpret_cast<const Eigen::half*>(A),
+       reinterpret_cast<const Eigen::half*>(B), static_cast<Eigen::half>(0.f), reinterpret_cast<Eigen::half*>(C),
+       threadpool);
 }
 
 #ifdef MLAS_SUPPORTS_GEMM_DOUBLE

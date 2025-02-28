@@ -34,6 +34,15 @@ ONNX_OPERATOR_TYPED_KERNEL_EX(
     KernelDefBuilder()
         .TypeConstraint("T", DataTypeImpl::GetTensorType<float>()),
     MultiHeadAttention<float>);
+ONNX_OPERATOR_TYPED_KERNEL_EX(
+    MultiHeadAttention,
+    kMSDomain,
+    1,
+    MLFloat16,
+    kCpuExecutionProvider,
+    KernelDefBuilder()
+        .TypeConstraint("T", DataTypeImpl::GetTensorType<MLFloat16>()),
+    MultiHeadAttention<MLFloat16>);
 
 template <typename T>
 MultiHeadAttention<T>::MultiHeadAttention(const OpKernelInfo& info) : OpKernel(info), AttentionCPUBase(info, false) {

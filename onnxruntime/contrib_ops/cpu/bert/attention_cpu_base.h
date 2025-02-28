@@ -165,7 +165,7 @@ class AttentionCPUBase : public AttentionBase {
 
     {
       const int loop_len = batch_size * num_heads_;
-      const float alpha = scale;
+      const T alpha(scale), one(1.0f), zero(0.0f);
 
       TensorOpCost unit_cost;
       const ptrdiff_t probs_matrix_size = SafeInt<ptrdiff_t>(sequence_length) * total_sequence_length;
@@ -219,7 +219,7 @@ class AttentionCPUBase : public AttentionBase {
             if (mask_data != nullptr) {
               // This can be optimized with vectorized add using MlasAddFloat32x4.
               for (ptrdiff_t j = 0; j < probs_matrix_size; j++) {
-                output[j] += mask_data[mask_offset + j];
+                output[j] = T(float(output[j]) + float(mask_data[mask_offset + j]));
               }
             }
           } else if (mask_data != nullptr) {
@@ -247,7 +247,7 @@ class AttentionCPUBase : public AttentionBase {
           // C: attention_probs  (B x N x) S x T          (B x N x) S x T        S x T
           math::Gemm<T, ThreadPool>(CblasNoTrans, CblasTrans, sequence_length, total_sequence_length, head_size, alpha,
                                     Q + q_input_chunk_length * i, k,
-                                    (mask_data != nullptr || attn_bias_data != nullptr) ? 1.0f : 0.0f,
+                                    (mask_data != nullptr || attn_bias_data != nullptr) ? one : zero,
                                     output, nullptr);
         }
       });
