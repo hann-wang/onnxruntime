@@ -31,6 +31,24 @@ inline Status Transpose_BSNH_to_BNSH(const Tensor* qkv,
   return Status::OK();
 }
 
+// type that is usable with Eigen cast
+template <typename T>
+struct EigenCastType {
+  using type = T;
+};
+
+// ORT float16 types don't support Eigen cast, so map them to Eigen ones
+
+template <>
+struct EigenCastType<MLFloat16> {
+  using type = Eigen::half;
+};
+
+template <>
+struct EigenCastType<BFloat16> {
+  using type = Eigen::bfloat16;
+};
+
 // Add bias + transpose for each of Q/K/V
 template <typename T>
 Status AddBiasTranspose(const Tensor* qkv,                   // Input: Q/K/V data - query is BxSxD, key is BxLxD, value is BxLxD_v
@@ -43,18 +61,42 @@ Status AddBiasTranspose(const Tensor* qkv,                   // Input: Q/K/V dat
                         int head_size,                       // head_size for Q/K, v_head_size for V
                         int hidden_size,                     // hidden_size for Q/K, v_hidden_size for V
                         OpKernelContext* context) {
+  using TEigen = typename EigenCastType<T>::type;
   // Note: the comments below will refer to Q's dimensions for simplicity
   auto element_type = DataTypeImpl::GetType<T>();
   constexpr size_t element_size = sizeof(T);
   ProcessBroadcastSpanFuncs add_funcs{
       [](BroadcastHelper& per_iter_bh) {
-        per_iter_bh.OutputEigen<float>() = per_iter_bh.ScalarInput0<float>() + per_iter_bh.EigenInput1<float>().array();
+        auto num_elements_1 = per_iter_bh.EigenInput1<T>().rows();
+        const auto* input_1 = reinterpret_cast<const TEigen*>(per_iter_bh.EigenInput1<T>().data());
+        ConstEigenVectorArrayMap<TEigen> input_1_vec_map(input_1, num_elements_1);
+        auto* output = reinterpret_cast<TEigen*>(per_iter_bh.OutputEigen<T>().data());
+        EigenVectorArrayMap<TEigen> output_vec_map(output, num_elements_1);
+        output_vec_map = static_cast<TEigen>(per_iter_bh.ScalarInput0<T>()) + input_1_vec_map.array();
+
+        // per_iter_bh.OutputEigen<float>() = per_iter_bh.ScalarInput0<float>() + per_iter_bh.EigenInput1<float>().array();
       },
       [](BroadcastHelper& per_iter_bh) {
-        per_iter_bh.OutputEigen<float>() = per_iter_bh.EigenInput0<float>().array() + per_iter_bh.ScalarInput1<float>();
+        auto num_elements_0 = per_iter_bh.EigenInput0<T>().rows();
+        const auto* input_0 = reinterpret_cast<const TEigen*>(per_iter_bh.EigenInput0<T>().data());
+        ConstEigenVectorArrayMap<TEigen> input_0_vec_map(input_0, num_elements_0);
+        auto* output = reinterpret_cast<TEigen*>(per_iter_bh.OutputEigen<T>().data());
+        EigenVectorArrayMap<TEigen> output_vec_map(output, num_elements_0);
+        output_vec_map = input_0_vec_map.array() + static_cast<TEigen>(per_iter_bh.ScalarInput1<T>());
+
+        // per_iter_bh.OutputEigen<T>() = per_iter_bh.EigenInput0<T>().array() + per_iter_bh.ScalarInput1<T>();
       },
       [](BroadcastHelper& per_iter_bh) {
-        per_iter_bh.OutputEigen<float>() = per_iter_bh.EigenInput0<float>() + per_iter_bh.EigenInput1<float>();
+        auto num_elements_0 = per_iter_bh.EigenInput0<T>().rows();
+        const auto* input_0 = reinterpret_cast<const TEigen*>(per_iter_bh.EigenInput0<T>().data());
+        const auto* input_1 = reinterpret_cast<const TEigen*>(per_iter_bh.EigenInput1<T>().data());
+        ConstEigenVectorArrayMap<TEigen> input_0_vec_map(input_0, num_elements_0);
+        ConstEigenVectorArrayMap<TEigen> input_1_vec_map(input_1, num_elements_0);
+        auto* output = reinterpret_cast<TEigen*>(per_iter_bh.OutputEigen<T>().data());
+        EigenVectorArrayMap<TEigen> output_vec_map(output, num_elements_0);
+        output_vec_map = input_0_vec_map.array() + input_1_vec_map.array();
+
+        // per_iter_bh.OutputEigen<T>() = per_iter_bh.EigenInput0<T>() + per_iter_bh.EigenInput1<T>();
       }};  // For element-wise add
 
   // Allocate space for output of Q(BS, D) + bias(D)
